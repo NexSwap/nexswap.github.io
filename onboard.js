@@ -1,0 +1,1349 @@
+import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.3/+esm";
+
+// Public project URL and publishable key (they identify the project; access is enforced by the rules and functions in
+// supabase/schema.sql). PKCE: Google sign-in comes back with a one-time code, never with tokens in the address.
+const supabase = createClient("https://wdqmqzeynvahrzgrddhl.supabase.co", "sb_publishable_kq_e29b0EZ3u6Y17liz58g_zcgza21W",
+  { auth: { flowType: "pkce" } });
+let user = null;   // the signed-in Supabase user (id, email, user_metadata from Google)
+
+// Must match include/Taxonomy.h (same order, TAXONOMY_VERSION 1)
+const INTERESTS = ["AI", "Fintech", "Healthtech", "Climate", "Web3", "SaaS", "E-commerce", "Edtech",
+  "Robotics", "Hardware", "Cybersecurity", "Data", "Design", "Marketing", "Sales", "Product",
+  "Gaming", "Media", "Biotech", "Mobility", "Proptech", "Agritech", "Impact", "Space",
+  "Chips", "Cloud", "DevTools", "Consumer", "Food", "Travel", "Sports", "Music"];
+const OFFER = ["Hiring", "Investing", "Mentoring", "Co-founder material",
+  "Selling", "Open to partner", "Freelancing", "Giving advice"];
+const SEEK = ["Job hunting", "Raising", "Seeking mentor", "Seeking co-founder",
+  "Buying", "Seeking partners", "Hiring freelancers", "Seeking advice"];
+// Dating events: the same bits with these labels (Taxonomy.h DATING_INTEREST_LABELS / DATING_GOAL_LABELS, "" = unused)
+const DATING_INTERESTS = ["Running", "Hiking", "Gym", "Yoga", "Climbing", "Cycling", "Dancing", "Cooking",
+  "Brunch", "Coffee", "Wine", "Travel", "Beach", "Live music", "Karaoke", "Movies",
+  "Gaming", "Board games", "Books", "Art", "Photography", "Pets", "Meditation", "Volunteering",
+  "Early bird", "Night owl", "Dog person", "Cat person", "Coffee date", "Drinks date", "Planner", "Spontaneous"];
+// From this bit on: the quick picks, this-or-that pairs (24 or 25, 26 or 27, ...), shown before hobbies in reasons
+const DATING_PICK_FIRST = 24;
+const DATING_GOALS = ["Slow & steady", "See where it goes", "Friends first",
+  "Manifestor", "Generator", "Manifesting Gen", "Projector", "Reflector"];
+const DATING_INTENTS = 3;   // goal bits 0-2: what they're looking for (set in offer and seek); 3-7: Human Design type
+const HD_TYPES = ["Manifestor", "Generator", "Manifesting Generator", "Projector", "Reflector"];
+// One line each, in Human Design's own terms, for people who half-know their type
+const HD_BLURBS = ["starts things", "steady energy, responds to what comes", "fast, many things at once",
+  "a natural guide", "mirrors the room"];
+// Which types each type pairs with (bit j = HD_TYPES[j]), sent as its seek bits. A draft to check with the organiser;
+// only this page has it (sim/proximity_sim.cpp copies it for --profiles dating). Projectors guide Generators and
+// Manifesting Generators; Manifestors start things those two respond to; Reflectors sample everyone.
+const HD_PAIRS = [0b00110, 0b01001, 0b01001, 0b00110, 0b01111];
+const IAM = ["Woman", "Man", "Non-binary", "Prefer not to say"];   // "who" bits 0-1: 1, 2, 3, 0
+const OPEN = ["Women", "Men", "Non-binary people"];                // "who" bits 2-4 (none = everyone)
+// Must match include/Proximity.c in the tag firmware
+const SETUP_SERVICE = "0b2c1a00-6d2e-4c1f-9a3e-4e5853570001";
+const SETUP_PROFILE = "0b2c1a00-6d2e-4c1f-9a3e-4e5853570002";
+const SETUP_STATUS  = "0b2c1a00-6d2e-4c1f-9a3e-4e5853570003";
+const SYNC_REQUEST  = "0b2c1a00-6d2e-4c1f-9a3e-4e5853570004";
+const SYNC_MATCHES  = "0b2c1a00-6d2e-4c1f-9a3e-4e5853570005";
+const SETUP_BUZZ    = "0b2c1a00-6d2e-4c1f-9a3e-4e5853570006";
+const OTA_VERSION   = "0b2c1a00-6d2e-4c1f-9a3e-4e5853570007";
+const OTA_CONTROL   = "0b2c1a00-6d2e-4c1f-9a3e-4e5853570008";
+const OTA_DATA      = "0b2c1a00-6d2e-4c1f-9a3e-4e5853570009";
+
+// The QR code on the tag opens this page with ?tag=<8-hex tag ID>&k=<6-hex one-time code>
+const params = new URLSearchParams(location.search);
+// ?demo=1 fills the Matches tab with sample people (drawn by the real rendering code), no sign-in, nothing saved
+const DEMO = params.get("demo") === "1";
+const DEMO_CARDS = {
+  "demo-alex":  { first: "Alex", company: "Demo Co", title: "Head of Sales", linkedin: "https://www.linkedin.com/company/nexswap/",
+                  email: "alex@example.com", photoURL: "", interests: 0x4001, offer: 0x05, seek: 0x10 },
+  "demo-priya": { first: "Priya", company: "Orbit Labs", title: "Founder", linkedin: "https://www.linkedin.com/company/nexswap/",
+                  photoURL: "", interests: 0x0804, offer: 0x08, seek: 0x02 },
+};
+const DEMO_ROWS = [{ uid: "demo-alex" }, { uid: "demo-priya" }, { uid: "demo-waiting" }];
+// ?demo=1&e=d: dating sample people, with the "See them again?" answer (Sam says yes too: contact shown)
+const DEMO_DATING_CARDS = {
+  "demo-alex":  { first: "Sam", why: "Both: Slow & steady · Running, Coffee", mutual: "@sam.runs.sg" },
+  "demo-priya": { first: "Jo", why: "Projector meets Generator · Live music, Board games" },
+};
+const TAG_ID = /^[0-9A-Fa-f]{8}$/.test(params.get("tag") || "") ? params.get("tag").toUpperCase() : "";
+const SETUP_CODE = /^[0-9A-Fa-f]{6}$/.test(params.get("k") || "") ? params.get("k").toUpperCase() : "";
+// A dating event: the tag's QR adds &e=d (its event type, set from the organiser's console). The dating form, a v2
+// profile, and no account (the database has no tables or rules for dating profiles yet). A link without it (a bookmark, Matches
+// later) uses what the last link with a tag or e= said, so a profile saved without a tag opens again.
+// A Human Design night adds &h=1 (the tag's "hd" setting): only then does the form ask for the type ("h" stored).
+const KIND_KEY = "nexswap-kind";
+let storedKind = null;
+try { storedKind = localStorage.getItem(KIND_KEY); } catch (e) {}
+const fromLink = !!TAG_ID || params.has("e");
+const DATING = params.has("e") ? params.get("e") === "d" : !TAG_ID && (storedKind === "d" || storedKind === "h");
+const HD_NIGHT = DATING && (fromLink ? params.get("h") === "1" : storedKind === "h");
+if (fromLink) try { localStorage.setItem(KIND_KEY, HD_NIGHT ? "h" : DATING ? "d" : "b"); } catch (e) {}
+document.querySelectorAll("[data-only]").forEach(el => el.hidden = el.dataset.only !== (DATING ? "dating" : "business"));
+document.querySelectorAll("[data-hd]").forEach(el => el.hidden = !HD_NIGHT);
+if (DATING) {
+  document.getElementById("interests-legend").textContent = "Your hobbies";
+  document.getElementById("goals-legend").textContent = "What are you looking for?";
+  document.getElementById("goals-hint").textContent = HD_NIGHT
+    ? "You match with people looking for the same, and with types that pair with yours."
+    : "You match with people looking for the same.";
+  document.querySelectorAll(".sign .kicker").forEach(k => k.textContent = "HOPING TO MEET");
+  document.getElementById("howto-looking").textContent = "Hoping to meet";
+  HD_TYPES.forEach((t, i) => document.getElementById("hd").append(new Option(`${t}: ${HD_BLURBS[i]}`, i)));
+  document.getElementById("matches-hint").textContent = "People your tag matched with at this event.";
+}
+
+// value = bit (labels "" are unused bits); box and bits let a group hold some of the labels
+function addChips(containerId, labels, type = "checkbox", box = document.getElementById(containerId), bits = labels.keys()) {
+  for (const i of bits) {
+    if (!labels[i]) continue;
+    const el = document.createElement("label");
+    el.className = "chip";
+    el.innerHTML = `<input type="${type}" name="${containerId}" value="${i}"><span></span>`;
+    el.querySelector("span").textContent = labels[i];
+    box.appendChild(el);
+  }
+}
+// Interests in labelled groups, not one wall of chips (display only: values are still the taxonomy bits). A label no
+// group lists (after a taxonomy change) goes under "More" rather than disappearing. "and", not "&": Silkscreen draws
+// "&" like "$".
+const INTEREST_GROUPS = [
+  ["Tech", [0, 4, 5, 8, 9, 10, 11, 24, 25, 26]],
+  ["Industries", [1, 2, 3, 6, 7, 18, 19, 20, 21, 23, 27, 28, 29]],
+  ["What you do", [15, 12, 13, 14]],
+  ["Culture and causes", [22, 17, 16, 30, 31]],
+];
+const DATING_INTEREST_GROUPS = [
+  ["Active", [0, 1, 2, 3, 4, 5, 6]],
+  ["Food and drink", [7, 8, 9, 10]],
+  ["Out and about", [11, 12, 13, 14, 15, 20, 23]],
+  ["Cosy and creative", [16, 17, 18, 19, 21, 22]],
+];
+function addChipGroups(containerId, labels, groups) {
+  const listed = new Set(groups.flatMap(([, bits]) => bits));
+  const rest = [...labels.keys()].filter(i => labels[i] && !listed.has(i));
+  for (const [title, bits] of rest.length ? [...groups, ["More", rest]] : groups) {
+    const group = document.createElement("div");
+    group.className = "chip-group";
+    group.innerHTML = `<h3></h3><div class="chips"></div>`;
+    group.querySelector("h3").textContent = title;
+    document.getElementById(containerId).append(group);
+    addChips(containerId, labels, "checkbox", group.querySelector(".chips"), bits);
+  }
+}
+addChipGroups("interests", DATING ? DATING_INTERESTS.slice(0, DATING_PICK_FIRST) : INTERESTS,
+              DATING ? DATING_INTEREST_GROUPS : INTEREST_GROUPS);
+// Quick picks: one row per pair; picking one clears the other, tapping it again clears it (value = bit)
+if (DATING) {
+  const picks = document.getElementById("picks");
+  for (let bit = DATING_PICK_FIRST; bit < 32; bit += 2) {
+    const row = document.createElement("div");
+    row.className = "chips pick-row";
+    [bit, bit + 1].forEach(b => {
+      const el = document.createElement("label");
+      el.className = "chip";
+      el.innerHTML = `<input type="checkbox" value="${b}"><span></span>`;
+      el.querySelector("span").textContent = DATING_INTERESTS[b];
+      row.appendChild(el);
+    });
+    picks.appendChild(row);
+  }
+  picks.addEventListener("change", e => {
+    if (e.target.checked) e.target.closest(".pick-row").querySelectorAll("input").forEach(cb => { if (cb !== e.target) cb.checked = false; });
+  });
+}
+addChips("offer", OFFER);
+addChips("seek", SEEK);
+if (DATING) {
+  addChips("iam", IAM, "radio");
+  addChips("open", OPEN);
+  addChips("intent", DATING_GOALS.slice(0, DATING_INTENTS), "radio");
+}
+
+function mask(containerId) {
+  let m = 0;
+  document.querySelectorAll(`#${containerId} input:checked`).forEach(cb => { m |= 1 << Number(cb.value); });
+  return m >>> 0;
+}
+const hex = (n, width) => n.toString(16).toUpperCase().padStart(width, "0");
+const clean = s => s.replace(/\|/g, "/").trim();   // "|" separates fields in the payload
+
+// v1 for business (tags on older firmware only take that); v2 adds the event kind and the dating "who" byte
+function payload() {
+  const p = formProfile();
+  return (DATING ? ["v2", p.first, "", "", "", hex(p.interests, 8), hex(p.offer, 2), hex(p.seek, 2), "1", hex(p.who, 2)]
+                 : ["v1", p.first, p.company, p.title, p.linkedin, hex(p.interests, 8), hex(p.offer, 2), hex(p.seek, 2)])
+    .join("|");
+}
+
+// Remember the form on this phone so a re-write is quick (a dating profile apart from the business one)
+const FIELDS = ["first", "company", "title", "linkedin"];
+const FORM_KEY = DATING ? "nexswap-profile-d" : "nexswap-profile";
+const DATING_BOXES = ["iam", "open", "intent", "picks"];
+function saveForm() {
+  try {
+    const data = { masks: [mask("interests"), mask("offer"), mask("seek")] };
+    FIELDS.forEach(id => data[id] = document.getElementById(id).value);
+    if (DATING) {
+      DATING_BOXES.forEach(id => data[id] = mask(id));
+      data.hd = Number(document.getElementById("hd").value);
+      data.adult = document.getElementById("adult").checked;
+      data.consent = document.getElementById("consent").checked;
+    }
+    localStorage.setItem(FORM_KEY, JSON.stringify(data));
+  } catch (e) {}
+}
+function loadForm() {
+  try {
+    const data = JSON.parse(localStorage.getItem(FORM_KEY) || "null");
+    if (!data) return;
+    FIELDS.forEach(id => document.getElementById(id).value = data[id] || "");
+    ["interests", "offer", "seek"].forEach((id, k) =>
+      document.querySelectorAll(`#${id} input`).forEach(cb => cb.checked = !!(data.masks[k] & (1 << Number(cb.value)))));
+    if (DATING) {
+      DATING_BOXES.forEach(id =>
+        document.querySelectorAll(`#${id} input`).forEach(cb => cb.checked = !!((data[id] || 0) & (1 << Number(cb.value)))));
+      document.getElementById("hd").value = String(data.hd ?? -1);
+      document.getElementById("adult").checked = !!data.adult;
+      document.getElementById("consent").checked = !!data.consent;
+    }
+  } catch (e) {}
+}
+loadForm();
+document.getElementById("form").addEventListener("change", saveForm);
+
+// The most choices a profile may have (Taxonomy.h MAX_INTERESTS / MAX_GOALS, sim/regress.py checks they agree): a tag
+// refuses more, and other tags ignore a tag with more, so nobody matches everyone by ticking everything. The other
+// chips stop at the limit; a profile saved before the limits can still be over, and sending stops it (overLimit).
+// Dating needs no more: one "looking for" and one type are single choices, the quick picks one of each pair
+const MAX_INTERESTS = 5, MAX_GOALS = 3;
+const LIMITS = [["interests", MAX_INTERESTS, DATING ? "hobbies" : "interests", 2]].concat(DATING ? [] :
+  [["offer", MAX_GOALS, "“I can offer” choices", 3], ["seek", MAX_GOALS, "“I'm looking for” choices", 3]]);
+function limitChips() {
+  for (const [id, max] of LIMITS) {
+    const boxes = [...document.querySelectorAll(`#${id} input`)], full = boxes.filter(b => b.checked).length >= max;
+    boxes.forEach(b => b.disabled = full && !b.checked);
+  }
+}
+function overLimit() {   // { step, text } for the first group over its limit
+  for (const [id, max, what, onStep] of LIMITS) {
+    const n = document.querySelectorAll(`#${id} input:checked`).length;
+    if (n > max) return { step: onStep, text: `You've picked ${n} ${what}. Untick ${n - max} to continue: a tag takes up to ${max}.` };
+  }
+  return null;
+}
+document.getElementById("form").addEventListener("change", limitChips);
+
+const status = document.getElementById("status");
+const button = document.getElementById("write");
+function setStatus(text, kind) {
+  status.textContent = text;
+  status.className = `status ${kind || ""}`;
+  status.hidden = !text;
+}
+
+const canSend = !!(TAG_ID && SETUP_CODE && navigator.bluetooth);
+// No Web Bluetooth (iPhones): the tag's own Wi-Fi instead (include/WifiSetup.c in the tag firmware)
+const canWifi = !!(TAG_ID && SETUP_CODE && !navigator.bluetooth);
+const WIFI_PENDING = "nexswap-wifi-pending";   // { id, ownerKey } while the phone is off to the tag's Wi-Fi
+const WIFI_SYNC = "nexswap-wifi-sync";         // { id, nonce } while it's off there to fetch the match log
+if (TAG_ID && SETUP_CODE) {
+  document.getElementById("tag-id").textContent = TAG_ID;
+  document.getElementById("tag-banner").hidden = false;
+  if (canWifi) document.getElementById("tag-how").textContent = "At the end you'll connect to its Wi-Fi.";
+} else if (!navigator.bluetooth) {
+  document.getElementById("unsupported").hidden = false;
+}
+
+// ---------- screen state: tabs, 3-step wizard for new profiles, one-tap summary for returning users ----------
+const form = document.getElementById("form");
+const backButton = document.getElementById("back");
+const syncButton = document.getElementById("sync");
+let activeTab = "profile";
+let mode = "wizard";        // "wizard" | "summary" | "howto" | "wifi"
+let step = 1;
+let howtoStep = 1;          // 1-4, the How it works cards
+const ONBOARDED = "nexswap-onboarded";   // set once How it works has been seen after a first send
+let busy = false;
+let tagLink = null;          // { device, ownerKey }: the tag this page last sent to (reconnects without the chooser)
+let wifiSyncOpen = false;    // Matches tab: the "Sync over your tag's Wi-Fi" steps are showing
+let buzzIdle = 0;
+const buzzButton = document.getElementById("buzz-try"), matchButton = document.getElementById("match-try");
+
+const hasProfile = () => !!document.getElementById("first").value.trim();
+const primaryLabel = () => canSend || canWifi ? "Send to my tag" : "Save my profile";
+
+// The name and company | title are on the badge preview above (renderPreview); the pills are everything else
+function fillSummary() {
+  const p = formProfile();
+  const pills = document.getElementById("sum-pills");
+  pills.replaceChildren();
+  const add = (text, goal) => { const li = document.createElement("li"); li.textContent = text; if (goal) li.className = "goal"; pills.append(li); };
+  if (DATING) {
+    [DATING_GOALS.find((_, i) => i < DATING_INTENTS && p.offer & (1 << i)), HD_TYPES[hdType(p.offer)]]
+      .forEach(t => { if (t) add(t, true); });
+    DATING_INTERESTS.forEach((l, i) => { if (l && p.interests & (1 << i)) add(l); });
+    return;
+  }
+  OFFER.forEach((l, i) => { if (p.offer & (1 << i)) add(l, true); });
+  SEEK.forEach((l, i) => { if (p.seek & (1 << i)) add(l, true); });
+  INTERESTS.forEach((l, i) => { if (p.interests & (1 << i)) add(l); });
+}
+
+function render() {
+  const onProfile = activeTab === "profile";
+  document.getElementById("view-profile").hidden = !onProfile;
+  document.getElementById("matches-section").hidden = onProfile;
+  document.getElementById("tab-profile").setAttribute("aria-selected", onProfile);
+  document.getElementById("tab-matches").setAttribute("aria-selected", !onProfile);
+  document.getElementById("matches-signin").hidden = onProfile || !!user || DEMO || DATING;
+  document.getElementById("matches-dating").hidden = onProfile || DEMO || !DATING;
+  document.getElementById("demo-banner").hidden = !DEMO;
+  if (!onProfile && !user && !DEMO) { document.getElementById("match-list").replaceChildren(); }
+
+  syncButton.hidden = onProfile || !user || wifiSyncOpen;
+  button.hidden = !onProfile || mode === "wifi";   // on the Wi-Fi cards the link is the action
+  document.getElementById("wifi-sync").hidden = onProfile || !user || !wifiSyncOpen;
+  const howto = mode === "howto";
+  backButton.hidden = !onProfile ? !user || !wifiSyncOpen
+                                 : mode === "summary" || (howto ? howtoStep === 1 : mode === "wizard" && step === 1);
+  if (!onProfile) return;
+
+  document.getElementById("summary").hidden = mode !== "summary";
+  document.getElementById("wifi-send").hidden = mode !== "wifi";
+  document.getElementById("update-tag").hidden = !navigator.bluetooth || !myTag;
+  form.hidden = mode !== "wizard";
+  document.getElementById("howto").hidden = !howto;
+  // Setup banners and privacy notes are about sending a profile, not about the walkthrough
+  ["tag-banner", "unsupported", "privacy"].forEach(id => document.getElementById(id).classList.toggle("howto-off", howto));
+  // Sign-in card: only where it helps (first step, or under a returning user's summary), not on every step
+  const signedOut = document.getElementById("signed-out");
+  signedOut.hidden = !!user || DATING || howto || (mode === "wizard" && step > 1);
+  const summary = document.getElementById("summary");
+  if (mode === "summary") summary.after(signedOut); else summary.before(signedOut);
+  if (mode === "summary") fillSummary();
+  if (mode === "summary" || mode === "wizard") renderPreview();
+  document.querySelectorAll(".step").forEach(f => f.hidden = Number(f.dataset.step) !== step);
+  document.getElementById("step-label").textContent = `Step ${step} of 3`;
+  document.querySelectorAll("#stepper .dots i").forEach((d, i) => d.classList.toggle("on", i === step - 1));
+  if (howto) renderHowto();
+  else stopSign();
+  if (!busy) button.textContent = howto ? (howtoStep === 4 ? "Got it" : "Next")
+                                        : mode === "summary" || step === 3 ? primaryLabel() : "Next";
+}
+
+// ---------- live preview (wizard and summary) ----------
+// The tag's name badge as it will look. On steps 2-3, a match's tag naming you with the reason it would give
+// (signReason, as on card 3), so picking interests and goals changes what's shown. Placeholders in grey until filled.
+function renderPreview() {
+  const p = formProfile(), sign = mode === "wizard" && step > 1;
+  const fill = (box, sel, text, placeholder) => box.querySelectorAll(sel).forEach(el => {
+    el.textContent = text || placeholder;
+    el.classList.toggle("empty", !text);
+  });
+  document.querySelectorAll(".preview").forEach(box => {
+    fill(box, "[data-me-name]", p.first, "Your name");
+    box.querySelectorAll("[data-me-name]").forEach(el => el.classList.toggle("long", (p.first || "Your name").length > 9));
+    // As on the tag: company | title, nothing at a dating event (a no-break space keeps the line's height)
+    fill(box, "[data-me-sub]", [p.company, p.title].filter(Boolean).join("  |  "), DATING ? " " : "Company  |  Role");
+    fill(box, "[data-me-why]", signReason(samplePartner(p), p), DATING ? "Your hobbies and picks" : "Your goals and interests");
+    const badge = box.querySelector('[data-preview="badge"]'), signEl = box.querySelector('[data-preview="sign"]');
+    if (signEl) { badge.hidden = sign; signEl.hidden = !sign; }
+    const cap = box.querySelector("[data-preview-cap]");
+    if (cap) cap.textContent = sign ? "Their tag when you match" : "Your tag";
+  });
+}
+// After the quick-picks handler (on #picks, nearer the input) has cleared the other half of a pair
+form.addEventListener("input", renderPreview);
+form.addEventListener("change", renderPreview);
+
+// ---------- How it works ----------
+// The badge mocks use the person's own profile: card 1-2 show their name badge, card 3 their tag and a sample
+// match's (card 4's person), each naming the other. The colours and four looks are the tag firmware's (Proximity.c GLOW_COLORS, ui_Screen2.c).
+const GLOW = ["#ff8a00", "#22d3ee", "#f472b6", "#a3e635", "#facc15", "#60a5fa", "#c084fc", "#f87171"];
+const SAMPLE_NAME = DATING ? "Sam" : "Alex";   // card 3's and card 4's sample match
+const reduceMotion = () => window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+let signTimers = [];
+
+function renderHowto() {
+  const p = formProfile();
+  const name = p.first || "You";
+  document.querySelectorAll("#howto [data-me-name]").forEach(el => {
+    el.textContent = name;
+    el.classList.toggle("long", el.classList.contains("big") && name.length > 9);
+  });
+  // As on the tag: company | title, nothing at a dating event (a no-break space keeps the line's height)
+  document.querySelectorAll("#howto [data-me-sub]").forEach(el => el.textContent = [p.company, p.title].filter(Boolean).join("  |  ") || "\u00a0");
+  // Card 3: my tag naming them and theirs naming me; card 4: them in my list, with their role. Nothing picked yet:
+  // sample wording (business: they sell, as samplePartner says)
+  const them = samplePartner(p), sample = DATING ? "Both: Slow & steady | Running, Coffee" : "Selling | AI, Fintech";
+  document.querySelectorAll("[data-them-name]").forEach(el => el.textContent = SAMPLE_NAME);
+  if (them.role) document.querySelectorAll("[data-them-role]").forEach(el => el.textContent = them.role);
+  document.getElementById("why-mine").textContent = signReason(p, them) || sample;
+  document.getElementById("why-theirs").textContent = signReason(them, p) || (DATING ? sample : "AI, Fintech");
+  document.querySelectorAll("[data-sample-why]").forEach(el => {
+    el.dataset.sampleWhy ||= el.textContent;
+    el.textContent = matchReason(them) || el.dataset.sampleWhy;
+  });
+  document.querySelectorAll(".howto-step").forEach(el => el.hidden = Number(el.dataset.howto) !== howtoStep);
+  document.getElementById("howto-label").textContent = `${howtoStep} of 4`;
+  document.querySelectorAll("#howto .dots i").forEach((d, i) => d.classList.toggle("on", i === howtoStep - 1));
+  document.getElementById("howto-signin").hidden = !!user || DATING;
+  if (howtoStep === 3) startSign(); else stopSign();
+  buzzButton.hidden = matchButton.hidden = !navigator.bluetooth || !(tagLink || myTag);
+  if (howtoStep !== 2 && howtoStep !== 3) buzzDisconnect();
+}
+
+// Card 3: both tags go through the four looks together: waiting for the other's answer, then the names fade in
+function startSign() {
+  if (signTimers.length) return;
+  const signs = [...document.querySelectorAll("#howto .sign")];
+  let look = 0;
+  const show = () => {
+    signs.forEach(sign => {
+      sign.className = `tagmock sign look-${look}`;
+      sign.style.setProperty("--glow", GLOW[look * 2]);   // orange, pink, yellow, violet
+      if (reduceMotion()) return;
+      sign.classList.add("waiting");
+      sign.querySelector(".big").classList.remove("fadein");
+    });
+    if (reduceMotion()) return;
+    signTimers.push(setTimeout(() => signs.forEach(sign => {
+      const big = sign.querySelector(".big");
+      sign.classList.remove("waiting"); void big.offsetWidth; big.classList.add("fadein");
+    }), 1200));
+  };
+  show();
+  if (!reduceMotion()) signTimers.push(setInterval(() => { look = (look + 1) % 4; show(); }, 4200));
+  else signTimers.push(0);
+}
+
+function stopSign() {
+  signTimers.forEach(t => { clearTimeout(t); clearInterval(t); });
+  signTimers = [];
+}
+
+function openHowto() {
+  mode = "howto";
+  howtoStep = 1;
+  render();
+  window.scrollTo(0, 0);
+}
+
+function finishHowto() {
+  try { localStorage.setItem(ONBOARDED, "1"); } catch (e) {}
+  buzzDisconnect();
+  mode = hasProfile() ? "summary" : "wizard";
+  step = 1;
+  setStatus("");
+  render();
+  window.scrollTo(0, 0);
+}
+
+function howtoGo(next) {
+  if (next ? howtoStep >= 4 : howtoStep <= 1) return false;
+  howtoStep += next ? 1 : -1;
+  setStatus("");
+  render();
+  window.scrollTo(0, 0);
+  slideIn(document.querySelector(`.howto-step[data-howto="${howtoStep}"]`), next);
+  return true;
+}
+
+function setBusy(on, label) {
+  busy = on;
+  button.disabled = on;
+  if (on) button.innerHTML = `<span class="spinner" aria-hidden="true"></span>${label}`;
+  render();
+}
+
+function updateInterestCount() {
+  const n = document.querySelectorAll("#interests input:checked").length;
+  document.getElementById("interest-count").textContent =
+    n === 0 ? "0 selected" : n < 3 ? `${n} selected, pick a few more`
+    : n > MAX_INTERESTS ? `${n} selected: untick ${n - MAX_INTERESTS}, a tag takes up to ${MAX_INTERESTS}`
+    : n === MAX_INTERESTS ? `${n} selected, that's the most` : `${n} selected`;
+}
+document.getElementById("interests").addEventListener("change", updateInterestCount);
+
+document.getElementById("tab-profile").addEventListener("click", () => { activeTab = "profile"; render(); });
+document.getElementById("tab-matches").addEventListener("click", () => { activeTab = "matches"; render(); });
+document.getElementById("edit").addEventListener("click", () => { mode = "wizard"; step = 1; render(); window.scrollTo(0, 0); });
+document.getElementById("howto-open").addEventListener("click", openHowto);
+document.getElementById("howto-skip").addEventListener("click", finishHowto);
+backButton.addEventListener("click", () => {
+  if (activeTab === "matches") { wifiSyncOpen = false; setStatus(""); render(); return; }
+  if (mode === "howto") { howtoGo(false); return; }
+  if (mode === "wifi") { mode = "summary"; setStatus(""); render(); return; }
+  step = Math.max(1, step - 1); render(); window.scrollTo(0, 0);
+});
+
+// ---------- company guess from a work email ----------
+// alex@stripe.com -> "Stripe", jo@nus.edu.sg -> "NUS"; personal mail providers give nothing
+const PERSONAL_MAIL = /^(gmail|googlemail|outlook|hotmail|live|msn|yahoo|ymail|icloud|me|mac|aol|proton|protonmail|pm|gmx|mail|yandex|zoho|qq|163|126|singnet|starhub|pacific|fastmail|hey|tutanota)\./;
+const SECOND_LEVEL = new Set(["co", "com", "edu", "gov", "org", "net", "ac"]);
+
+function companyFromEmail(email) {
+  const domain = (email || "").split("@")[1]?.toLowerCase();
+  if (!domain) return "";
+  const labels = domain.split(".");
+  if (labels.length < 2) return "";
+  // skip country second-level suffixes like .com.sg / .co.uk / .edu.sg
+  let i = labels.length - 2;
+  if (labels.length >= 3 && SECOND_LEVEL.has(labels[i]) && labels[labels.length - 1].length === 2) i--;
+  const name = labels[i];
+  // check the registrable domain (nexswap.co), not subdomains like mail.nexswap.co
+  if (!name || PERSONAL_MAIL.test(labels.slice(i).join(".") )) return "";
+  if (name.length <= 3) return name.toUpperCase();
+  return name.split("-").map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(" ").slice(0, 47);
+}
+
+// ---------- my tag (remembered after the first send) ----------
+// { id: "501BAC1B", ownerKey: 32 hex }: the owner key is shared with the tag and unlocks its match log
+let myTag = null;
+try { myTag = JSON.parse(localStorage.getItem("nexswap-tag") || "null"); } catch (e) {}
+function rememberTag(t) {
+  myTag = t;
+  try { localStorage.setItem("nexswap-tag", JSON.stringify(t)); } catch (e) {}
+}
+// ---------- Walkthrough cards 2 and 3: the tag itself plays the match buzz / a sample match sign ----------
+// Needs the owner key, like the match log. While the phone is connected the tag stops advertising (no matching),
+// so the connection is dropped a few seconds after the last tap.
+function buzzDisconnect() {
+  clearTimeout(buzzIdle);
+  if (tagLink && tagLink.device.gatt.connected) tagLink.device.gatt.disconnect();
+}
+
+// Write "o=<owner key>" + suffix to the tag; the button shows progress and the note what to expect
+async function tagCommand(btn, note, suffix, labels) {
+  btn.disabled = true;
+  btn.innerHTML = `<span class="spinner" aria-hidden="true"></span>${labels.busy}`;
+  note.textContent = "";
+  let ok = false;
+  try {
+    if (!tagLink) {                                // opened How it works later: pick the tag once
+      const { device } = await connectTag(myTag.id);
+      tagLink = { device, ownerKey: myTag.ownerKey };
+    }
+    const { device } = tagLink;
+    for (let attempt = 1; !device.gatt.connected; attempt++) {
+      try { await device.gatt.connect(); }
+      catch (err) { if (attempt >= 3) throw err; await new Promise(r => setTimeout(r, 500)); }
+    }
+    const service = await device.gatt.getPrimaryService(SETUP_SERVICE);
+    let char;
+    try { char = await service.getCharacteristic(SETUP_BUZZ); }
+    catch (e) { note.textContent = "Your tag needs a firmware update for this."; return false; }
+    await char.writeValueWithResponse(new TextEncoder().encode(`o=${tagLink.ownerKey}${suffix}`));
+    ok = true;
+    note.textContent = labels.done;
+    clearTimeout(buzzIdle);
+    buzzIdle = setTimeout(buzzDisconnect, 5000);
+  } catch (err) {
+    if (err.name !== "NotFoundError") note.textContent = "Couldn't reach your tag. Move closer and try again.";
+    buzzDisconnect();
+  } finally {
+    btn.disabled = false;
+    btn.textContent = ok ? labels.again : labels.idle;
+  }
+  return ok;
+}
+
+buzzButton.addEventListener("click", async () => {
+  const ok = await tagCommand(buzzButton, document.getElementById("buzz-note"), "", {
+    idle: "Tap to feel the buzz", busy: "Buzzing…", again: "Tap to feel it again",
+    done: "Didn't feel it? Check Settings → Vibration on the tag." });
+  if (!ok) return;
+  // Restart the mock's shake so it moves with the real buzz
+  const step = buzzButton.closest(".howto-step");
+  for (const el of [step.querySelector(".tagmock"), step.querySelector(".buzz-label")]) {
+    el.style.animation = "none"; void el.offsetWidth; el.style.animation = "";
+  }
+});
+
+matchButton.addEventListener("click", () => tagCommand(matchButton, document.getElementById("match-note"), "|m", {
+  idle: "Show a sample match on my tag", busy: "Sending…", again: "Show another look",
+  done: `Watch your tag: it waits for the other badge, then shows “${DATING ? "Sam" : "Alex Tan"}” and buzzes. Each try shows a different look.` }));
+
+// ---------- "Update my tag": new firmware over Bluetooth (include/Ota.c in the tag firmware) ----------
+// firmware/manifest.json (next to this page, written by release_firmware.sh) says which build is current. The tag
+// downloads it into its spare slot and only switches once it has all of it and NexSwap's signature checks out.
+const OTA_CHUNK = 240;       // + 4-byte offset: fits one packet (phones use 247+ byte packets), so no reply is needed
+const OTA_SYNC = 32;         // read the tag's status every this many pieces: catches errors, keeps the queue short
+const updateButton = document.getElementById("update-tag");
+
+updateButton.addEventListener("click", async () => {
+  if (!myTag) return;
+  const enc = t => new TextEncoder().encode(t);
+  updateButton.disabled = true;
+  let conn = null, wakeLock = null, started = false;
+  try {
+    setStatus("Checking for a new version…");
+    const manifest = await (await fetch("firmware/manifest.json", { cache: "no-store" })).json();
+    setStatus("Choose your tag in the Bluetooth list…");
+    conn = await connectTag(myTag.id);
+    let versionChar;
+    try { versionChar = await conn.service.getCharacteristic(OTA_VERSION); }
+    catch (e) { setStatus("This tag needs one update over USB before it can update over Bluetooth.", "err"); return; }
+    const [build, ...name] = new TextDecoder().decode(await versionChar.readValue()).split(" ");
+    if (Number(build) >= manifest.build) { setStatus(`Your tag is up to date (${name.join(" ")}).`, "ok"); return; }
+    if (!confirm(`Update your tag to version ${manifest.version}? Keep your phone next to it until it's done (about 2 minutes).`)) {
+      setStatus("");
+      return;
+    }
+    setStatus("Downloading the update…");
+    const bin = new Uint8Array(await (await fetch("firmware/" + manifest.file, { cache: "no-store" })).arrayBuffer());
+    if (bin.length !== manifest.size) throw new Error("the download was incomplete");
+    const control = await conn.service.getCharacteristic(OTA_CONTROL);
+    const data = await conn.service.getCharacteristic(OTA_DATA);
+    const tagStatus = async () => new TextDecoder().decode(await control.readValue());
+    await control.writeValueWithResponse(enc(`begin|${bin.length}|${manifest.build}|${manifest.signature}`));
+    const ready = await tagStatus();
+    if (ready !== "ready") throw new Error(ready === "older" ? "your tag already has a newer version" : ready);
+    started = true;
+    try { wakeLock = await navigator.wakeLock?.request("screen"); } catch (e) {}   // a sleeping phone drops the link
+    let shown = -1;
+    for (let offset = 0, n = 1; offset < bin.length; offset += OTA_CHUNK, n++) {
+      const piece = bin.subarray(offset, offset + OTA_CHUNK), msg = new Uint8Array(4 + piece.length);
+      new DataView(msg.buffer).setUint32(0, offset, true);
+      msg.set(piece, 4);
+      await data.writeValueWithoutResponse(msg);
+      if (n % OTA_SYNC === 0) {
+        const s = await tagStatus();
+        if (s !== "ready") throw new Error(s);
+      }
+      const pct = Math.floor(100 * (offset + piece.length) / bin.length);
+      if (pct !== shown) { setStatus(`Updating your tag… ${pct}%. Keep your phone next to it.`); shown = pct; }
+    }
+    await control.writeValueWithResponse(enc("end"));
+    let done = "checking";
+    for (let i = 0; i < 40 && done === "checking"; i++) {   // the tag checks the signature (about a second)
+      await new Promise(r => setTimeout(r, 250));
+      done = await tagStatus();
+    }
+    if (done !== "ok") throw new Error(done === "bad-signature" ? "the update arrived damaged or isn't from NexSwap" : done);
+    started = false;
+    setStatus(`Updated to ${manifest.version}. Your tag is restarting.`, "ok");
+  } catch (err) {
+    if (started && conn && conn.device.gatt.connected) {
+      try { await (await conn.service.getCharacteristic(OTA_CONTROL)).writeValueWithResponse(enc("abort")); } catch (e) {}
+    }
+    setStatus(err.name === "NotFoundError" ? "No tag chosen. Make sure your tag is on and nearby."
+              : `Couldn't update your tag (${err.message}). It keeps its current version; try again.`, "err");
+  } finally {
+    if (wakeLock) wakeLock.release().catch(() => {});
+    if (conn) conn.device.gatt.disconnect();
+    updateButton.disabled = false;
+  }
+});
+
+function randomHex(bytes) {
+  return [...crypto.getRandomValues(new Uint8Array(bytes))].map(b => b.toString(16).padStart(2, "0")).join("").toUpperCase();
+}
+function newOwnerKey() {
+  return randomHex(16);
+}
+
+// ---------- account ----------
+const now = () => new Date().toISOString();
+const userName = u => u.user_metadata?.full_name || u.user_metadata?.name || "";
+const userPhoto = u => u.user_metadata?.avatar_url || u.user_metadata?.picture || "";
+const TAG_TAKEN = "This tag is still linked to someone from an earlier event. Ask the organiser to reset the tags.";
+const shareContact = document.getElementById("share-contact");   // email and LinkedIn on the card (on by default)
+
+// Dating: offer = what they're looking for + their own Human Design type, seek = the same + the types it pairs with
+// (HD_PAIRS); who = I am (bits 0-1) + who they'd like to meet (bits 2-4). Company, title and LinkedIn stay empty.
+function formProfile() {
+  const v = id => clean(document.getElementById(id).value);
+  if (DATING) {
+    const intent = mask("intent"), hd = HD_NIGHT ? Number(document.getElementById("hd").value) : -1;
+    const iam = document.querySelector("#iam input:checked"), i = iam ? Number(iam.value) : 3;
+    return { first: v("first"), company: "", title: "", linkedin: "", interests: (mask("interests") | mask("picks")) >>> 0,
+             offer: intent | (hd >= 0 ? 1 << (DATING_INTENTS + hd) : 0),
+             seek: intent | (hd >= 0 ? HD_PAIRS[hd] << DATING_INTENTS : 0),
+             who: (i === 3 ? 0 : i + 1) | mask("open") << 2 };
+  }
+  return { first: v("first"), company: v("company"), title: v("title"), linkedin: v("linkedin"),
+           interests: mask("interests"), offer: mask("offer"), seek: mask("seek") };
+}
+function hdType(offer) {   // their Human Design type (HD_TYPES index), -1 = not given
+  for (let i = DATING_INTENTS; i < 8; i++) if (offer & (1 << i)) return i - DATING_INTENTS;
+  return -1;
+}
+
+// How it works: someone who complements me, for the sample sign and sample match. Business: one person with one
+// link, the one my tag names first (signReason: something I'm looking for they offer, else something I offer they
+// want), with a role to fit (OFFER_ROLES / SEEK_ROLES, by goal bit). Nothing picked yet: they sell.
+// Dating: looking for the same, of the first type mine pairs with (HD_PAIRS). Both: my interests
+const OFFER_ROLES = ["Head of Talent · Demo Co", "Partner · Demo Ventures", "VP Engineering · Demo Co",
+  "Ex-founder · Demo Labs", "Head of Sales · Demo Co", "Partnerships Lead · Demo Co",
+  "Freelance designer · Self-employed", "Advisor · Demo Partners"];
+const SEEK_ROLES = ["Software Engineer · Open to work", "Founder · Demo Labs", "Associate PM · Demo Co",
+  "Engineer · Stealth startup", "Head of Procurement · Demo Co", "BD Lead · Demo Co",
+  "Marketing Lead · Demo Co", "First-time founder · Demo Labs"];
+function samplePartner(me) {
+  if (!DATING) {
+    for (let i = 0; i < 8; i++) {
+      if (me.seek & (1 << i)) return { offer: 1 << i, seek: 0, interests: me.interests, role: OFFER_ROLES[i] };
+      if (me.offer & (1 << i)) return { offer: 0, seek: 1 << i, interests: me.interests, role: SEEK_ROLES[i] };
+    }
+    return { offer: 1 << 4, seek: 0, interests: me.interests, role: OFFER_ROLES[4] };
+  }
+  const intent = me.offer & ((1 << DATING_INTENTS) - 1), mine = hdType(me.offer);
+  const type = mine >= 0 ? Math.log2(HD_PAIRS[mine] & -HD_PAIRS[mine]) : -1;   // lowest bit
+  return { interests: me.interests, offer: intent | (type >= 0 ? 1 << (DATING_INTENTS + type) : 0),
+           seek: intent | (type >= 0 ? HD_PAIRS[type] << DATING_INTENTS : 0) };
+}
+
+// The labels of shared interest bits, in the tag's order (Proximity.c matchReason): at a dating event the quick
+// picks (DATING_PICK_FIRST on) before the hobbies
+function sharedLabels(shared) {
+  const labels = DATING ? DATING_INTERESTS : INTERESTS, first = DATING ? DATING_PICK_FIRST : 0, out = [];
+  for (let k = 0; k < 32; k++) {
+    const i = (first + k) % 32;
+    if (labels[i] && shared & (1 << i)) out.push(labels[i]);
+  }
+  return out;
+}
+
+// The reason line on me's tag for a match with them, worded as the tag words it (include/Proximity.c matchReason):
+// "Hiring | AI, Fintech", "Both: Slow & steady | Running, Coffee", "Projector meets Generator | Running"
+function signReason(me, them) {
+  let out = "";
+  if (DATING) {
+    const same = [...Array(DATING_INTENTS).keys()].find(i => me.seek & them.offer & (1 << i));
+    const mine = hdType(me.offer), theirs = hdType(them.offer), types = 0xFF << DATING_INTENTS;
+    if (same !== undefined) out = `Both: ${DATING_GOALS[same]}`;
+    else if (mine >= 0 && theirs >= 0 && ((me.seek & them.offer) | (me.offer & them.seek)) & types)
+      out = `${DATING_GOALS[DATING_INTENTS + theirs]} meets ${DATING_GOALS[DATING_INTENTS + mine]}`;
+  } else {
+    for (let i = 0; i < 8 && !out; i++) {
+      if (me.seek & them.offer & (1 << i)) out = OFFER[i];
+      else if (me.offer & them.seek & (1 << i)) out = SEEK[i];
+    }
+  }
+  return [out, sharedLabels(me.interests & them.interests).slice(0, 2).join(", ")].filter(Boolean).join(" | ");
+}
+
+function fillForm(p) {
+  ["first", "company", "title", "linkedin"].forEach(id => document.getElementById(id).value = p[id] || "");
+  [["interests", p.interests], ["offer", p.offer], ["seek", p.seek]].forEach(([id, m]) =>
+    document.querySelectorAll(`#${id} input`).forEach(cb => cb.checked = !!((m || 0) & (1 << Number(cb.value)))));
+  saveForm();
+  limitChips();
+}
+
+// Only the profile: the database builds the card mutual matches see from it (build_card in schema.sql), with the
+// email and LinkedIn link only when sharing is on (the tag still hands the link to people who tap it)
+async function saveToAccount() {
+  if (!user) return true;
+  const { error } = await supabase.from("profiles").upsert({
+    id: user.id, ...formProfile(), share_email: shareContact.checked,
+    tag_id: myTag ? myTag.id : null, owner_key: myTag ? myTag.ownerKey : null,
+    last_active_at: now(), updated_at: now() });
+  if (error) console.error(error);
+  return !error;
+}
+
+// Link a tag to this account. Refused while someone else holds it: the first claim stands until the tags are freed
+// after the event. Called after sending a profile and after every sync (reading a tag proves this phone has it).
+async function claimTag(tagId) {
+  const { error } = await supabase.from("tag_owners").upsert({ tag_id: tagId, uid: user.id, updated_at: now() });
+  if (error) console.error(error);
+  return !error;
+}
+
+async function signIn() {
+  // Off to Google and back to this same address (the tag link included); the form is already saved on this phone
+  const back = location.origin + location.pathname + location.search;
+  const { error } = await supabase.auth.signInWithOAuth({ provider: "google", options: { redirectTo: back } });
+  if (error) setStatus(`Sign-in failed: ${error.message}`, "err");
+}
+document.getElementById("google").addEventListener("click", signIn);
+document.getElementById("google-matches").addEventListener("click", signIn);
+document.getElementById("signout").addEventListener("click", () => { supabase.auth.signOut(); activeTab = "profile"; render(); });
+document.getElementById("delete").addEventListener("click", async () => {
+  if (!user || !confirm("Delete your saved NexSwap profile and matches? Your tag keeps its current profile until you write a new one.")) return;
+  try {
+    // One call: removes the account, which removes its profile, card, tag claims and matches, including the
+    // entries about it in other people's match lists (delete_my_account in schema.sql)
+    const { error } = await supabase.rpc("delete_my_account");
+    if (error) throw error;
+    try { localStorage.removeItem("nexswap-tag"); } catch (e) {}
+    myTag = null;
+    try { localStorage.removeItem("nexswap-profile"); } catch (e) {}
+    await supabase.auth.signOut({ scope: "local" });   // the account is gone: just forget the session on this phone
+    setStatus("Your saved profile was deleted.", "ok");
+  } catch (e) {
+    setStatus(`Couldn't delete: ${e.message}`, "err");
+  }
+});
+
+// Back from the tag's Wi-Fi: its "saved" page links to ?tag=<id>#sent. Finish like a Bluetooth send.
+let wifiSent = null;
+try {
+  const pending = JSON.parse(localStorage.getItem(WIFI_PENDING) || "null");
+  if (location.hash === "#sent" && pending && pending.id === TAG_ID) {
+    wifiSent = pending;
+    localStorage.removeItem(WIFI_PENDING);
+    rememberTag({ id: pending.id, ownerKey: pending.ownerKey });
+    history.replaceState(null, "", location.pathname + location.search);
+    let firstTime = false;
+    try { firstTime = !localStorage.getItem(ONBOARDED); } catch (e) {}
+    mode = firstTime ? "howto" : "summary";
+    howtoStep = 1;
+    setStatus("Done! Your tag should say “Profile saved”.", "ok");
+  }
+} catch (e) {}
+
+// Back from the tag's Wi-Fi with its match log: ?tag=<id>#n=<nonce>&m=<14 hex per match: tag ID, score, age>.
+// Only with the nonce this phone sent, so a link from someone else can't add matches (and unlock cards).
+let wifiSynced = null;
+try {
+  const back = new URLSearchParams(location.hash.slice(1));
+  if (back.has("m")) {
+    const pending = JSON.parse(localStorage.getItem(WIFI_SYNC) || "null");
+    const log = back.get("m");
+    if (pending && pending.id === TAG_ID && back.get("n") === pending.nonce && /^([0-9A-F]{14})*$/.test(log)) {
+      wifiSynced = (log.match(/.{14}/g) || []).map(e => ({ tagId: e.slice(0, 8), score: parseInt(e.slice(8, 10), 16) }));
+      localStorage.removeItem(WIFI_SYNC);
+      activeTab = "matches";
+      setStatus("Saving the matches from your tag…");
+    }
+    history.replaceState(null, "", location.pathname + location.search);
+  }
+} catch (e) {}
+
+// Fires on load (INITIAL_SESSION), after sign-in and sign-out, and on hourly token refreshes: only a change of person
+// matters. Handled outside the callback, since Supabase calls made inside it can wait on each other forever.
+let shownUserId;
+supabase.auth.onAuthStateChange((_event, session) => {
+  const u = DATING ? null : session?.user ?? null;   // dating profiles stay on the phone and the tag (no account yet)
+  if ((u ? u.id : null) === shownUserId) return;
+  shownUserId = u ? u.id : null;
+  setTimeout(() => showUser(u));
+});
+
+async function showUser(u) {
+  user = u;
+  document.getElementById("signed-in").hidden = !u;
+  document.getElementById("delete").hidden = !u;
+  document.getElementById("share-contact-row").hidden = !u;
+  render();
+  if (!u) {
+    if (wifiSynced) setStatus("Sign in to save the matches from your tag.");
+    return;
+  }
+  document.getElementById("who").textContent = u.email || userName(u) || "your Google account";
+  const avatar = document.getElementById("avatar");
+  avatar.hidden = !userPhoto(u);
+  if (userPhoto(u)) avatar.src = userPhoto(u);
+  try {
+    const { data, error } = await supabase.from("profiles").select("*").eq("id", u.id).maybeSingle();
+    if (error) throw error;
+    if (data) {
+      fillForm(data);
+      shareContact.checked = data.share_email;
+      // just sent over Wi-Fi: that tag is the current one
+      if (data.tag_id && data.owner_key && !wifiSent) rememberTag({ id: data.tag_id, ownerKey: data.owner_key });
+      // the 24-month rule counts from the last visit or sync
+      supabase.from("profiles").update({ last_active_at: now() }).eq("id", u.id).then(({ error }) => error && console.error(error));
+      updateInterestCount();
+      if (!wifiSent) {
+        mode = "summary";
+        if (!TAG_ID) activeTab = "matches";    // returning visit without a tag: matches are the likely reason
+        setStatus("");
+      }
+      render();
+    } else {
+      if (!document.getElementById("first").value && userName(u)) {
+        document.getElementById("first").value = userName(u).split(" ")[0].slice(0, 12);
+      }
+      const company = document.getElementById("company");
+      const guess = companyFromEmail(u.email);
+      if (!company.value && guess) company.value = guess;
+      saveForm();
+      if (!hasProfile()) { mode = "wizard"; step = 1; }
+      render();
+      setStatus(guess ? `We guessed your company from your email (${guess}). Edit it if it's wrong.` : "");
+    }
+  } catch (e) {
+    setStatus(`Couldn't load your saved profile: ${e.message}`, "err");
+  }
+  if (wifiSent) {                            // the tag has the profile: link it to the account, as after Bluetooth
+    const claimed = await claimTag(wifiSent.id);
+    const saved = await saveToAccount();
+    if (!claimed) setStatus(TAG_TAKEN, "err");
+    else if (!saved) setStatus("Sent to your tag, but saving to your account failed. Try again later.", "err");
+    wifiSent = null;
+  }
+  if (wifiSynced) {                          // the match log, back over the tag's Wi-Fi: save it like a Bluetooth sync
+    try {
+      const claimed = await claimTag(TAG_ID);   // this phone just read the tag, so it has it
+      await saveMatches(wifiSynced);
+      setStatus(claimed ? syncedText(wifiSynced.length) : TAG_TAKEN, claimed ? "ok" : "err");
+    } catch (e) {
+      console.error(e);
+      setStatus("Couldn't save the matches from your tag. Try syncing again.", "err");
+    }
+    wifiSynced = null;
+  }
+  try {
+    await renderMatches();
+  } catch (e) {
+    console.error(e);
+  }
+}
+
+// Advert manufacturer data after the company ID: 'N' 'X' version, then the tag ID little-endian (see Proximity.c).
+// Both advert types (MATCH and HELLO) start with this. Versions 2 and 1 = tags on older firmware: still found.
+const TAG_ADVERT_VERSIONS = [3, 2, 1];
+function tagAdvertFilters(tagHex) {
+  const id = parseInt(tagHex, 16) >>> 0;
+  return TAG_ADVERT_VERSIONS.map(v => ({ manufacturerData: [{ companyIdentifier: 0xFFFF,
+    dataPrefix: new Uint8Array([0x4E, 0x58, v, id & 0xFF, (id >>> 8) & 0xFF, (id >>> 16) & 0xFF, (id >>> 24) & 0xFF]) }] }));
+}
+
+async function connectTag(tagId) {
+  const device = await navigator.bluetooth.requestDevice({
+    filters: tagAdvertFilters(tagId),
+    optionalServices: [SETUP_SERVICE],
+  });
+  setStatus("Connecting to your tag…");
+  let server;
+  for (let attempt = 1; ; attempt++) {           // the first connect can fail while the tag is busy scanning
+    try { server = await device.gatt.connect(); break; }
+    catch (err) { if (attempt >= 3) throw err; await new Promise(r => setTimeout(r, 500)); }
+  }
+  return { device, service: await server.getPrimaryService(SETUP_SERVICE) };
+}
+
+// The tag's match log, page by page: 'M', version, total (2B LE), page, n, then n x [tagId 4B LE, score, age 2B]
+async function readMatchLog(service, ownerKey) {
+  const request = await service.getCharacteristic(SYNC_REQUEST);
+  const response = await service.getCharacteristic(SYNC_MATCHES);
+  const found = [];
+  for (let page = 0; page < 10; page++) {
+    await request.writeValueWithResponse(new TextEncoder().encode(`o=${ownerKey}|p=${page}`));
+    const view = await response.readValue();
+    const v = new Uint8Array(view.buffer, view.byteOffset, view.byteLength);
+    if (v[0] !== 0x4D) throw new Error("the tag didn't accept this phone's key");
+    const total = v[2] | (v[3] << 8), n = v[5];
+    for (let i = 0; i < n; i++) {
+      const o = 6 + i * 7;
+      found.push({ tagId: hex((v[o] | (v[o + 1] << 8) | (v[o + 2] << 16) | (v[o + 3] << 24)) >>> 0, 8), score: v[o + 4] });
+    }
+    if (n === 0 || found.length >= total) break;
+  }
+  return found;
+}
+
+// Send the profile (with this phone's owner key), then read the match log in the same connection
+async function sendToTag() {
+  const ownerKey = myTag && myTag.id === TAG_ID ? myTag.ownerKey : newOwnerKey();
+  const { device, service } = await connectTag(TAG_ID);
+  try {
+    const profileChar = await service.getCharacteristic(SETUP_PROFILE);
+    const statusChar = await service.getCharacteristic(SETUP_STATUS);
+    setStatus("Sending…");
+    await profileChar.writeValueWithResponse(new TextEncoder().encode(`k=${SETUP_CODE}|o=${ownerKey}|${payload()}`));
+    const result = new TextDecoder().decode(await statusChar.readValue());
+    if (result === "ok") tagLink = { device, ownerKey };   // for "Tap to feel the buzz", without the chooser again
+    let matches = [];
+    if (result === "ok" && user) {
+      try { matches = await readMatchLog(service, ownerKey); } catch (e) { console.error(e); }
+    }
+    return { result, ownerKey, matches };
+  } finally {
+    device.gatt.disconnect();
+  }
+}
+
+// ---------- matches ----------
+// The tag's match log in one call: the database works out who wears each tag, and tags nobody has claimed yet wait
+// until someone does (save_matches and link_pending in schema.sql). The page never names an account.
+async function saveMatches(list) {
+  const { error } = await supabase.rpc("save_matches", { p_matches: list.map(m => ({ tag: m.tagId, score: m.score })) });
+  if (error) throw error;
+}
+
+// Same idea as the tag's match reason: what they bring that I want (or want that I bring), then shared interests.
+// Dating: looking for the same thing, or their type and mine when they pair, then shared hobbies
+function matchReason(card) {
+  const me = formProfile();
+  if (DATING) {
+    let goal = "";
+    const same = [0, 1, 2].find(i => me.seek & card.offer & (1 << i));
+    const mine = hdType(me.offer), theirs = hdType(card.offer), types = 0xFF << DATING_INTENTS;
+    if (same !== undefined) goal = `Both: ${DATING_GOALS[same]}`;
+    else if (mine >= 0 && theirs >= 0 && ((me.seek & card.offer) | (me.offer & card.seek)) & types)
+      goal = `${HD_TYPES[theirs]} meets ${HD_TYPES[mine]}`;
+    const hobbies = sharedLabels(me.interests & card.interests).slice(0, 3);
+    return [goal, hobbies.join(", ")].filter(Boolean).join(" · ");
+  }
+  const parts = [];
+  for (let i = 0; i < 8; i++) {
+    const bit = 1 << i;
+    if (me.seek & card.offer & bit) parts.push(OFFER[i]);
+    else if (me.offer & card.seek & bit) parts.push(SEEK[i]);
+  }
+  const shared = INTERESTS.filter((_, i) => (me.interests & card.interests) & (1 << i)).slice(0, 3);
+  return [parts.slice(0, 2).join(", "), shared.join(", ")].filter(Boolean).join(" · ");
+}
+
+function el(tag, className, text) {
+  const e = document.createElement(tag);
+  if (className) e.className = className;
+  if (text) e.textContent = text;
+  return e;
+}
+
+async function renderMatches() {
+  const list = document.getElementById("match-list");
+  const hint = document.getElementById("matches-hint");
+  let rows, pending, loadCard;
+  if (DEMO) {
+    rows = DEMO_ROWS;
+    pending = { size: 1 };
+    loadCard = async uid => (DATING ? DEMO_DATING_CARDS : DEMO_CARDS)[uid] || null;
+  } else {
+    // One call, newest first, each with its status worked out by the database (my_matches in schema.sql): mutual
+    // ones come with the card, waiting ones (they haven't synced you yet) without. Rows are keyed by tag ID.
+    const { data, error } = await supabase.rpc("my_matches");
+    if (error) throw error;
+    const cards = new Map(data.filter(r => r.status === "mutual").map(r => [r.tag_id, {
+      first: r.first, company: r.company, title: r.title, linkedin: r.linkedin, email: r.email, photoURL: r.photo_url,
+      interests: Number(r.interests), offer: r.offer, seek: r.seek }]));
+    rows = data.filter(r => r.status !== "not_signed_up").map(r => ({ uid: r.tag_id }));
+    pending = { size: data.length - rows.length };
+    loadCard = async key => cards.get(key) || null;
+  }
+  list.replaceChildren();
+
+  let waiting = 0;
+  for (const row of rows) {
+    let card = null;
+    try { card = await loadCard(row.uid); } catch (e) {}
+    const li = el("li", card ? "match fade" : "match waiting fade");
+    const face = el("div", "initials", card ? (card.first || "?").slice(0, 1).toUpperCase() : "…");
+    if (card && /^https:\/\//.test(card.photoURL || "")) {
+      const img = document.createElement("img");
+      img.src = card.photoURL; img.alt = ""; img.referrerPolicy = "no-referrer";
+      face.replaceChildren(img);
+    }
+    const body = el("div");
+    li.append(face, body);
+    if (!card) {
+      waiting++;
+      body.append(el("p", "name", "Waiting for them to sync"),
+                  el("p", "sub", "You'll see who it is once they sync their tag too."));
+      list.append(li);
+      continue;
+    }
+    body.append(el("p", "name", card.first));
+    const sub = [card.company, card.title].filter(Boolean).join(" · ");
+    if (sub) body.append(el("p", "sub", sub));
+    const why = card.why || matchReason(card);
+    if (why) body.append(el("p", "why", why));
+    if (DATING) {
+      datingAnswer(body, row.uid, card);
+      list.append(li);
+      continue;
+    }
+    const actions = el("div", "actions");
+    if (/^https:\/\//i.test(card.linkedin || "")) {
+      const a = el("a", "btn btn-ghost", "LinkedIn");
+      a.href = card.linkedin; a.target = "_blank"; a.rel = "noopener";
+      actions.append(a);
+    }
+    if (card.email) {
+      const a = el("a", "btn btn-ghost", "Email");
+      a.href = `mailto:${card.email}`;
+      actions.append(a);
+    }
+    if (actions.children.length) body.append(actions);
+    list.append(li);
+  }
+
+  if (!rows.length) {
+    const empty = el("li", "empty");
+    empty.append(el("strong", "", pending.size ? "Almost there" : "No matches yet"),
+                 document.createTextNode(myTag ? "Wear your tag at an event, then tap “Sync from my tag”."
+                                               : "Send your profile to your tag first: tap its screen, then scan the QR code."));
+    list.append(empty);
+  }
+  const notes = [];
+  if (waiting) notes.push(`${waiting} waiting for the other person to sync.`);
+  if (pending.size) notes.push(`${pending.size} matched with someone who hasn't set up their profile yet. They'll appear once they do.`);
+  hint.textContent = notes.join(" ") || "People your tag matched with. Only people who also synced you can see your details.";
+  const resolved = rows.length - waiting;
+  const badge = document.getElementById("match-count");
+  badge.textContent = resolved;
+  badge.hidden = resolved === 0;
+}
+
+// Dating: "See them again?" Their contact shows only once both said yes. (Only the demo so far: saving the answers
+// and the contact, with database rules that keep it from anyone who didn't say yes back, comes with the pilot.)
+const datingYes = new Set(), datingNo = new Set();
+function datingAnswer(body, uid, card) {
+  if (datingNo.has(uid)) { body.append(el("p", "sub", "Not now. Nothing is shared.")); return; }
+  if (datingYes.has(uid)) {
+    body.append(el("p", "sub", card.mutual ? `It's mutual! ${card.mutual}`
+                                           : "You said yes. If they say yes too, you'll both see each other's contact here."));
+    return;
+  }
+  body.append(el("p", "sub", "See them again?"));
+  const actions = el("div", "actions");
+  for (const [label, set] of [["Yes", datingYes], ["Not now", datingNo]]) {
+    const b = el("button", "btn btn-ghost", label);
+    b.type = "button";
+    b.addEventListener("click", () => { set.add(uid); renderMatches(); });
+    actions.append(b);
+  }
+  body.append(actions);
+}
+
+function syncedText(n) {
+  return n ? `Synced ${n} match${n === 1 ? "" : "es"} from your tag.` : "Your tag has no matches yet.";
+}
+
+document.getElementById("sync").addEventListener("click", async () => {
+  if (!user) return;
+  if (!myTag) { setStatus("Send your profile to your tag first: tap its screen, then scan the QR code.", "err"); return; }
+  if (!navigator.bluetooth) {                // no Web Bluetooth (iPhones): the three Wi-Fi steps, then one link to the tag
+    const nonce = randomHex(8);
+    try { localStorage.setItem(WIFI_SYNC, JSON.stringify({ id: myTag.id, nonce })); } catch (e) {}
+    document.getElementById("wifi-sync-go").href = `http://192.168.4.1/m?o=${myTag.ownerKey}&n=${nonce}`;
+    wifiSyncOpen = true;
+    setStatus("");
+    render();
+    return;
+  }
+  const sync = syncButton;
+  sync.disabled = true;
+  sync.innerHTML = `<span class="spinner" aria-hidden="true"></span>Syncing…`;
+  let conn = null;
+  try {
+    setStatus("Choose your tag in the Bluetooth list…");
+    conn = await connectTag(myTag.id);
+    setStatus("Reading your matches…");
+    const found = await readMatchLog(conn.service, myTag.ownerKey);
+    const claimed = await claimTag(myTag.id);   // the tag answered this phone's key, so it's still this phone's tag
+    await saveMatches(found);
+    await renderMatches();
+    setStatus(claimed ? syncedText(found.length) : TAG_TAKEN, claimed ? "ok" : "err");
+  } catch (err) {
+    setStatus(err.name === "NotFoundError" ? "No tag chosen. Make sure your tag is on and nearby."
+              : `Couldn't sync (${err.message}).`, "err");
+  } finally {
+    if (conn) conn.device.gatt.disconnect();
+    sync.disabled = false;
+    sync.textContent = "Sync from my tag";
+  }
+});
+
+const SEND_ERRORS = {
+  "closed": "The tag's code has expired. Tap the tag's screen for a new code (or Menu → Settings → Update profile if it already has your profile), then scan it.",
+  "bad-code": "This code has expired. Tap the tag's screen, then scan the new QR code.",
+  "locked": "Too many tries with a wrong code. Wait a minute, then scan the QR code on the tag again.",
+  // A tag on older firmware doesn't know dating profiles (v2)
+  "bad-format": DATING ? "This tag needs an update before it can take a dating profile. Ask the organiser."
+                       : "The tag couldn't read that profile. Check your details and try again.",
+  "wrong-kind": "This tag is set up for a different kind of event. Tap its screen and scan its new QR code.",
+};
+
+button.addEventListener("click", async () => {
+  if (mode === "howto") { if (!howtoGo(true)) finishHowto(); return; }
+  const first = document.getElementById("first");
+  if (mode === "wizard" && step === 1 && !first.value.trim()) {
+    first.focus(); setStatus("Add your first name to continue.", "err"); return;
+  }
+  if (mode === "wizard" && step < 3) {
+    setStatus("");
+    step++; render(); window.scrollTo(0, 0);
+    return;
+  }
+  if (!first.value.trim()) { mode = "wizard"; step = 1; render(); first.focus(); setStatus("Add your first name first.", "err"); return; }
+  if (DATING && !(document.getElementById("adult").checked && document.getElementById("consent").checked)) {
+    mode = "wizard"; step = 3; render();
+    setStatus("Tick both boxes at the bottom to continue. This event is for people aged 18 and over.", "err");
+    return;
+  }
+  const over = overLimit();
+  if (over) { mode = "wizard"; step = over.step; render(); window.scrollTo(0, 0); setStatus(over.text, "err"); return; }
+  saveForm();
+  setBusy(true, canSend ? "Sending…" : "Saving…");
+  const saved = await saveToAccount();
+  try {
+    if (canWifi) {                                 // no Bluetooth: the three Wi-Fi steps, then one link to the tag
+      const ownerKey = myTag && myTag.id === TAG_ID ? myTag.ownerKey : newOwnerKey();
+      try { localStorage.setItem(WIFI_PENDING, JSON.stringify({ id: TAG_ID, ownerKey })); } catch (e) {}
+      document.getElementById("wifi-go").href =
+        `http://192.168.4.1/p?k=${SETUP_CODE}&o=${ownerKey}&p=${encodeURIComponent(payload())}`;
+      mode = "wifi";
+      setStatus(saved && user ? "Saved to your account. Now send it to your tag." : "");
+      return;
+    }
+    if (!canSend) {
+      mode = "summary";
+      setStatus(saved && user ? "Saved to your account." : "Saved on this phone.", "ok");
+      return;
+    }
+    setStatus("Choose your tag in the Bluetooth list…");
+    const { result, ownerKey, matches } = await sendToTag();
+    if (result === "ok") {
+      rememberTag({ id: TAG_ID, ownerKey });
+      let accountOk = saved, tagTaken = false;
+      if (user) {
+        try {
+          tagTaken = !(await claimTag(TAG_ID));
+          accountOk = (await saveToAccount()) && accountOk;   // now includes the tag
+          await saveMatches(matches);
+          await renderMatches();
+        } catch (e) {
+          console.error(e);
+          accountOk = false;
+        }
+      }
+      // First time a tag is set up on this phone: walk them through how the badge works
+      let firstTime = false;
+      try { firstTime = !localStorage.getItem(ONBOARDED); } catch (e) {}
+      mode = firstTime ? "howto" : "summary";
+      howtoStep = 1;
+      if (tagTaken) setStatus(`Sent to your tag. ${TAG_TAKEN}`, "err");
+      else setStatus(accountOk ? "Done! Your tag should say “Profile saved”."
+                               : "Sent to your tag, but saving to your account failed. Try again later.", accountOk ? "ok" : "err");
+    } else {
+      setStatus(SEND_ERRORS[result] || `The tag replied “${result}”. Try again.`, "err");
+    }
+  } catch (err) {
+    if (err.name === "NotFoundError") {
+      setStatus("No tag chosen. Tap the tag's screen so it shows its QR code, then try again.", "err");
+    } else {
+      setStatus(`Couldn't reach your tag (${err.message}). Move closer and try again.`, "err");
+    }
+  } finally {
+    setBusy(false);
+  }
+});
+
+// ---------- swipe between pages ----------
+// Wizard: left = next step, right = previous (never sends). Otherwise: left/right switches the two tabs.
+function slideIn(el, fromRight) {
+  if (!el) return;
+  el.classList.remove("from-right", "from-left");
+  void el.offsetWidth;                                   // restart the animation
+  el.classList.add(fromRight ? "from-right" : "from-left");
+}
+
+function swipe(direction) {
+  const next = direction === "left";
+  if (activeTab === "profile" && mode === "howto") { howtoGo(next); return; }
+  if (activeTab === "profile" && mode === "wizard") {
+    if (next && step < 3) {
+      if (step === 1 && !document.getElementById("first").value.trim()) {
+        setStatus("Add your first name to continue.", "err");
+        return;
+      }
+      setStatus("");
+      step++;
+    } else if (!next && step > 1) {
+      step--;
+    } else {
+      return;
+    }
+    render();
+    window.scrollTo(0, 0);
+    slideIn(document.querySelector(`.step[data-step="${step}"]`), next);
+    return;
+  }
+  if (next && activeTab === "profile") activeTab = "matches";
+  else if (!next && activeTab === "matches") activeTab = "profile";
+  else return;
+  render();
+  window.scrollTo(0, 0);
+  slideIn(document.getElementById(activeTab === "profile" ? "view-profile" : "matches-section"), next);
+}
+
+// Can we move in this direction from here? (Step 1 without a name is handled by swipe() with a message.)
+function canSwipe(direction) {
+  const next = direction === "left";
+  if (activeTab === "profile" && mode === "howto") return next ? howtoStep < 4 : howtoStep > 1;
+  if (activeTab === "profile" && mode === "wizard") {
+    if (next && step === 1 && !document.getElementById("first").value.trim()) return false;   // rubber-band + message
+    return next ? step < 3 : step > 1;
+  }
+  return next ? activeTab === "profile" : activeTab === "matches";
+}
+
+// The element that moves under the finger: the current wizard step, or the whole tab
+function currentPanel() {
+  if (activeTab === "profile" && mode === "howto") return document.querySelector(`.howto-step[data-howto="${howtoStep}"]`);
+  if (activeTab === "profile" && mode === "wizard") return document.querySelector(`.step[data-step="${step}"]`);
+  return document.getElementById(activeTab === "profile" ? "view-profile" : "matches-section");
+}
+
+function resetPanel(el) {
+  el.classList.remove("dragging");
+  el.style.transition = el.style.transform = el.style.opacity = "";
+}
+
+// Drag follows the finger; release past the threshold (or a quick flick) slides the page away, otherwise it springs back
+let drag = null;
+document.addEventListener("touchstart", e => {
+  drag = null;
+  if (e.touches.length !== 1 || busy) return;
+  const t = e.touches[0];
+  if (t.clientX < 24 || t.clientX > window.innerWidth - 24) return;   // screen edges belong to the system back gesture
+  if (e.target.closest(".bar")) return;                                // the action bar is for tapping
+  drag = { x: t.clientX, y: t.clientY, time: Date.now(), axis: null, dx: 0, el: currentPanel() };
+}, { passive: true });
+
+document.addEventListener("touchmove", e => {
+  if (!drag || !drag.el) return;
+  const t = e.touches[0];
+  const dx = t.clientX - drag.x, dy = t.clientY - drag.y;
+  if (!drag.axis) {
+    if (Math.abs(dx) < 10 && Math.abs(dy) < 10) return;
+    drag.axis = Math.abs(dx) > Math.abs(dy) * 1.2 ? "x" : "y";        // decide once: swipe or scroll
+    if (drag.axis === "x") drag.el.classList.add("dragging");
+  }
+  if (drag.axis !== "x") return;
+  drag.dx = dx;
+  const open = canSwipe(dx < 0 ? "left" : "right");
+  const shift = open ? dx : dx * 0.25;                                  // rubber-band where there's nowhere to go
+  drag.el.style.transition = "none";
+  drag.el.style.transform = `translateX(${shift}px)`;
+  drag.el.style.opacity = open ? String(1 - Math.min(Math.abs(dx) / window.innerWidth, 1) * 0.5) : "1";
+}, { passive: true });
+
+document.addEventListener("touchend", () => {
+  if (!drag || drag.axis !== "x" || !drag.el) { drag = null; return; }
+  const { el, dx, time } = drag;
+  drag = null;
+  const direction = dx < 0 ? "left" : "right";
+  const flick = Math.abs(dx) > 30 && Date.now() - time < 250;
+  const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  if ((Math.abs(dx) >= 60 || flick) && canSwipe(direction)) {
+    if (reduce) { resetPanel(el); swipe(direction); return; }
+    el.style.transition = "transform .16s ease-in, opacity .16s ease-in";
+    el.style.transform = `translateX(${direction === "left" ? "-45%" : "45%"})`;
+    el.style.opacity = "0";
+    setTimeout(() => { resetPanel(el); swipe(direction); }, 160);
+  } else {
+    el.style.transition = "transform .2s ease-out, opacity .2s ease-out";   // spring back
+    el.style.transform = "translateX(0)";
+    el.style.opacity = "1";
+    setTimeout(() => resetPanel(el), 200);
+    if (Math.abs(dx) >= 60 && direction === "left" && activeTab === "profile" && mode === "wizard" && step === 1 &&
+        !document.getElementById("first").value.trim()) {
+      setStatus("Add your first name to continue.", "err");
+    }
+  }
+}, { passive: true });
+
+document.addEventListener("touchcancel", () => { if (drag?.el) resetPanel(drag.el); drag = null; }, { passive: true });
+
+// First paint: returning visitors (profile remembered on this phone) get the one-tap summary
+updateInterestCount();
+limitChips();
+if (hasProfile() && !wifiSent) mode = "summary";   // just back from the tag's Wi-Fi: keep "How it works" / done
+if (DEMO) { activeTab = "matches"; renderMatches(); }
+if (params.get("howto") === "1") { activeTab = "profile"; mode = "howto"; }   // open How it works directly
+render();
