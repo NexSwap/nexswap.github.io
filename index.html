@@ -212,8 +212,19 @@
   .tagmock p { margin: 0; }
   .tagmock .big { color: #fff; font-size: calc(var(--u) * 34); font-weight: 500; line-height: 1.12; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .tagmock .big.long { font-size: calc(var(--u) * 25); }
+  /* The badge's own name (ui_Screen2.c ui_set_user): 64 px, 48 for a longer name, 36 for the longest */
+  .tagmock:not(.sign) .big { font-size: calc(var(--u) * 60); }
+  .tagmock:not(.sign) .big.mid { font-size: calc(var(--u) * 45); }
+  .tagmock:not(.sign) .big.long { font-size: calc(var(--u) * 34); }
   .tagmock .small { color: #a09aae; font-size: calc(var(--u) * 14); max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .tagmock .why { white-space: normal; }   /* the sign's reason wraps, up to 3 lines (ui_Screen2.c) */
+  .tagmock .opener { color: #fff; }        /* the dating question: one line, brighter than the hint */
+  /* A dating sign (ui_Screen2.c): the name up to 64 px instead of 48, a one-line hint, the question a size up */
+  .tagmock.sign.dating .big { font-size: calc(var(--u) * 45); }
+  .tagmock.sign.dating .big.long { font-size: calc(var(--u) * 33); }
+  .tagmock.sign.dating .why { white-space: nowrap; }
+  .tagmock.sign.dating .opener { font-size: calc(var(--u) * 16); }
+  .tagmock .opener:empty, .tagmock.waiting .opener { display: none; }
   .tagmock .rule { width: 34px; height: 3px; border-radius: 2px; background: var(--accent); margin: 3px 0 5px; }
   .tagmock .nearby { position: absolute; left: 12px; bottom: 8px; font-size: 11px; color: #a09aae; display: flex; align-items: center; gap: 5px; }
   .tagmock .nearby i { width: 7px; height: 7px; border-radius: 50%; background: var(--ok); }
@@ -239,6 +250,9 @@
   .pair .tagmock .big { font-size: calc(var(--u) * 40); }
   .pair .tagmock .big.long { font-size: calc(var(--u) * 28); }
   .pair .tagmock .small { font-size: calc(var(--u) * 17); line-height: 1.25; }
+  .pair .tagmock.sign.dating .big { font-size: calc(var(--u) * 53); }
+  .pair .tagmock.sign.dating .big.long { font-size: calc(var(--u) * 37); }
+  .pair .tagmock.sign.dating .opener { font-size: calc(var(--u) * 19); }
   .pair-link { color: var(--dim); font-size: 18px; align-self: center; padding-top: 19px; }
   /* The four match looks: a breathing glow layer behind the text */
   .tagmock .glow { position: absolute; inset: 0; pointer-events: none; }
@@ -253,6 +267,7 @@
   .tagmock.look-3 .glow::after { bottom: 4%; }
   .tagmock.look-2 .kicker { color: #f5f0ea; }
   .tagmock.look-2 .small { color: #ece6df; }
+  .tagmock.look-2 .opener { color: #f5f0ea; }
   /* While the other badge's answer is on its way: a shimmer bar holds the name's place */
   .tagmock .shimmer { display: none; width: 70%; height: calc(var(--u) * 32); border-radius: calc(var(--u) * 8);
                       background: linear-gradient(90deg, #2e2838 35%, #4a4258 50%, #2e2838 65%) #2e2838; background-size: 250% 100%; }
@@ -381,11 +396,13 @@
         <div class="stage pair" aria-hidden="true">
           <figure><figcaption>Your tag</figcaption>
             <div class="tagmock sign look-1"><span class="glow"></span><p class="kicker">LOOKING FOR</p>
-              <p class="big" data-them-name></p><span class="shimmer"></span><p class="small why" id="why-mine"></p></div></figure>
+              <p class="big" data-them-name></p><span class="shimmer"></span><p class="small why" id="why-mine"></p>
+              <p class="small opener" data-opener></p></div></figure>
           <span class="pair-link">⇄</span>
           <figure><figcaption><span data-them-name></span>'s tag</figcaption>
             <div class="tagmock sign look-1"><span class="glow"></span><p class="kicker">LOOKING FOR</p>
-              <p class="big" data-me-name></p><span class="shimmer"></span><p class="small why" id="why-theirs"></p></div></figure>
+              <p class="big" data-me-name></p><span class="shimmer"></span><p class="small why" id="why-theirs"></p>
+              <p class="small opener" data-opener></p></div></figure>
         </div>
         <h1>Look for your name</h1>
         <p>When you match, both tags light up in the same colour and style: yours shows their name, theirs shows yours. Look around for a glowing badge that says <strong><span id="howto-looking">Looking for</span> <span data-me-name></span></strong>: that's your match.</p>
@@ -404,7 +421,7 @@
             <div class="actions"><span class="btn btn-ghost">Yes</span><span class="btn btn-ghost">Not now</span></div></div></li></ul>
         </div>
         <h1>After the event</h1>
-        <p data-only="business">Open <strong>Matches</strong> and sync from your tag to see everyone you met, with their LinkedIn.</p>
+        <p data-only="business">Return your tag at the desk. Your <strong>Matches</strong> then show everyone you met, with their LinkedIn.</p>
         <p data-only="dating" hidden>Open <strong>Matches</strong> and say who you'd like to see again. Their contact
           details show only if you <strong>both say yes</strong>.</p>
         <p id="howto-signin">Sign in with Google to keep them after the event.</p>
@@ -422,7 +439,7 @@
       <figure class="preview" aria-hidden="true">
         <div class="tagmock" data-preview="badge"><p class="big" data-me-name></p><span class="rule"></span><p class="small" data-me-sub></p></div>
         <div class="tagmock sign look-1" data-preview="sign" hidden><span class="glow"></span><p class="kicker">LOOKING FOR</p>
-          <p class="big" data-me-name></p><p class="small why" data-me-why></p></div>
+          <p class="big" data-me-name></p><p class="small why" data-me-why></p><p class="small opener" data-me-opener></p></div>
         <figcaption data-preview-cap>Your tag</figcaption>
       </figure>
 
@@ -453,8 +470,8 @@
         <div id="interests"></div>
         <p class="counter" id="interest-count" aria-live="polite">0 selected</p>
         <div class="goal-group" data-only="dating" hidden><h3>Quick picks (optional)</h3>
-          <p class="hint" style="margin:4px 0 0">This or that: tap one of each, or skip any. Pick the same as someone and
-            it can show on your badges.</p>
+          <p class="hint" style="margin:4px 0 0">This or that: tap one of each, or skip any. When you match, a pick you
+            share, or one you split, shows on both badges: something to talk about.</p>
           <div id="picks"></div></div>
       </fieldset>
 
@@ -500,11 +517,11 @@
          so you can reuse it at future events. We use your Google sign-in to identify your account, and save your Google
          email only for your matches to see, unless you untick “Share my email and LinkedIn with my matches”. You can
          delete your saved profile and matches at any time below.</p>
-      <p>Your tag remembers who you matched with. When you sync, those matches are saved to your account, and your
-         matches can see your name, company, title, interests and goals (and your email and LinkedIn, unless you turned
-         that off), but only once you have both synced,
-         so nobody can look you up without having actually met you. This page also remembers which tag is yours and a
-         secret key that lets only your phone read your tag's matches.</p>
+      <p>Your tag remembers who you matched with. When you return your tag, we copy its matches to your account, and
+         your matches can see your name, company, title, interests and goals (and your email and LinkedIn, unless you
+         turned that off), but only if their tag matched you too,
+         so nobody can look you up without having actually met you. This page also remembers which tag is yours, and a
+         code from your tag that lets only this phone make it buzz in How it works.</p>
       <p>Without signing in, your profile is only kept in this browser on this phone and matches can't be saved.</p>
       </div>
       <button id="delete" class="btn btn-danger" type="button" hidden>Delete my saved profile and matches</button>
@@ -516,18 +533,7 @@
       <span><strong>Demo preview.</strong> These are sample people, not real matches. Nothing here is saved.</span>
     </div>
     <h1>Your matches</h1>
-    <p class="lead" id="matches-hint">People your tag matched with at events appear here after you sync.</p>
-    <!-- Browsers without Web Bluetooth (iPhones): the match log comes back over the tag's own Wi-Fi -->
-    <div id="wifi-sync" class="card" hidden>
-      <h2>Sync over your tag's Wi-Fi</h2>
-      <ol class="wifi-steps">
-        <li>On your tag, tap the menu button (top left), then <strong>Settings → Sync to phone</strong>.</li>
-        <li>Scan the Wi-Fi code on the tag with your camera and tap <strong>Join</strong>.</li>
-        <li>Come back here and tap <strong>Get my matches</strong>.</li>
-      </ol>
-      <a id="wifi-sync-go" class="btn btn-primary" href="#">Get my matches</a>
-      <p class="hint" style="margin:12px 0 0">Your phone then goes back to its usual connection and your matches appear here.</p>
-    </div>
+    <p class="lead" id="matches-hint">People your tag matched with appear here after you return your tag at the end of the event.</p>
     <ul id="match-list" class="match-list"></ul>
     <div id="matches-dating" class="empty" hidden><strong>Your matches show here after the event</strong>
       You'll choose who you'd like to see again. Contact details are shared only when you both say yes.</div>
@@ -542,7 +548,6 @@
   <div class="actions-row">
     <button id="back" class="btn btn-ghost" type="button" hidden>Back</button>
     <button id="write" class="btn btn-primary" type="button">Next</button>
-    <button id="sync" class="btn btn-primary" type="button" hidden>Sync from my tag</button>
   </div>
 </div></div>
 

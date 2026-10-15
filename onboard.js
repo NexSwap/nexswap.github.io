@@ -20,8 +20,23 @@ const DATING_INTERESTS = ["Running", "Hiking", "Gym", "Yoga", "Climbing", "Cycli
   "Brunch", "Coffee", "Wine", "Travel", "Beach", "Live music", "Karaoke", "Movies",
   "Gaming", "Board games", "Books", "Art", "Photography", "Pets", "Meditation", "Volunteering",
   "Early bird", "Night owl", "Dog person", "Cat person", "Coffee date", "Drinks date", "Planner", "Spontaneous"];
-// From this bit on: the quick picks, this-or-that pairs (24 or 25, 26 or 27, ...), shown before hobbies in reasons
+// From this bit on: the quick picks, this-or-that pairs (24 or 25, 26 or 27, ...): before hobbies in the Matches tab
 const DATING_PICK_FIRST = 24;
+// A dating sign's hint and question under the name (Taxonomy.h, the same wording; datingSign): a shared quick pick, a
+// pair split, a shared hobby ("Both into <hobby>")
+const DATING_PICK_HINTS = ["Both early birds", "Both night owls", "Both dog people", "Both cat people",
+  "Both into coffee dates", "Both into drinks dates", "Both planners", "Both spontaneous"];
+const DATING_PICK_QUESTIONS = ["best sunrise spot?", "best late-night spot?", "dream dog?", "best cat story?",
+  "best coffee spot?", "go-to drink?", "next big plan?", "last-minute adventure?"];
+const DATING_SPLIT_HINTS = ["Early bird meets night owl", "Dog person meets cat person", "Coffee meets drinks",
+  "Planner meets spontaneous"];
+const DATING_SPLIT_QUESTIONS = ["sunrise or midnight?", "dogs or cats, and why?", "coffee or cocktails?", "plan or wing it?"];
+const DATING_HOBBY_QUESTIONS = ["best run you've done?", "favourite trail?", "what's your workout?", "favourite yoga pose?",
+  "best climb so far?", "best ride you've done?", "what do you dance?", "signature dish?",
+  "best brunch spot?", "coffee order?", "favourite wine?", "next trip?",
+  "favourite beach?", "last gig?", "go-to karaoke song?", "all-time favourite film?",
+  "what are you playing?", "favourite board game?", "what are you reading?", "favourite artist?",
+  "best photo you took?", "your pet's name?", "what got you into it?", "why you volunteer?"];
 const DATING_GOALS = ["Slow & steady", "See where it goes", "Friends first",
   "Manifestor", "Generator", "Manifesting Gen", "Projector", "Reflector"];
 const DATING_INTENTS = 3;   // goal bits 0-2: what they're looking for (set in offer and seek); 3-7: Human Design type
@@ -39,8 +54,6 @@ const OPEN = ["Women", "Men", "Non-binary people"];                // "who" bits
 const SETUP_SERVICE = "0b2c1a00-6d2e-4c1f-9a3e-4e5853570001";
 const SETUP_PROFILE = "0b2c1a00-6d2e-4c1f-9a3e-4e5853570002";
 const SETUP_STATUS  = "0b2c1a00-6d2e-4c1f-9a3e-4e5853570003";
-const SYNC_REQUEST  = "0b2c1a00-6d2e-4c1f-9a3e-4e5853570004";
-const SYNC_MATCHES  = "0b2c1a00-6d2e-4c1f-9a3e-4e5853570005";
 const SETUP_BUZZ    = "0b2c1a00-6d2e-4c1f-9a3e-4e5853570006";
 const OTA_VERSION   = "0b2c1a00-6d2e-4c1f-9a3e-4e5853570007";
 const OTA_CONTROL   = "0b2c1a00-6d2e-4c1f-9a3e-4e5853570008";
@@ -84,6 +97,7 @@ if (DATING) {
     ? "You match with people looking for the same, and with types that pair with yours."
     : "You match with people looking for the same.";
   document.querySelectorAll(".sign .kicker").forEach(k => k.textContent = "HOPING TO MEET");
+  document.querySelectorAll(".tagmock.sign").forEach(el => el.classList.add("dating"));   // big name, one-line hint
   document.getElementById("howto-looking").textContent = "Hoping to meet";
   HD_TYPES.forEach((t, i) => document.getElementById("hd").append(new Option(`${t}: ${HD_BLURBS[i]}`, i)));
   document.getElementById("matches-hint").textContent = "People your tag matched with at this event.";
@@ -241,8 +255,7 @@ function setStatus(text, kind) {
 const canSend = !!(TAG_ID && SETUP_CODE && navigator.bluetooth);
 // No Web Bluetooth (iPhones): the tag's own Wi-Fi instead (include/WifiSetup.c in the tag firmware)
 const canWifi = !!(TAG_ID && SETUP_CODE && !navigator.bluetooth);
-const WIFI_PENDING = "nexswap-wifi-pending";   // { id, ownerKey } while the phone is off to the tag's Wi-Fi
-const WIFI_SYNC = "nexswap-wifi-sync";         // { id, nonce } while it's off there to fetch the match log
+const WIFI_PENDING = "nexswap-wifi-pending";   // { id } while the phone is off to the tag's Wi-Fi
 if (TAG_ID && SETUP_CODE) {
   document.getElementById("tag-id").textContent = TAG_ID;
   document.getElementById("tag-banner").hidden = false;
@@ -254,15 +267,13 @@ if (TAG_ID && SETUP_CODE) {
 // ---------- screen state: tabs, 3-step wizard for new profiles, one-tap summary for returning users ----------
 const form = document.getElementById("form");
 const backButton = document.getElementById("back");
-const syncButton = document.getElementById("sync");
 let activeTab = "profile";
 let mode = "wizard";        // "wizard" | "summary" | "howto" | "wifi"
 let step = 1;
 let howtoStep = 1;          // 1-4, the How it works cards
 const ONBOARDED = "nexswap-onboarded";   // set once How it works has been seen after a first send
 let busy = false;
-let tagLink = null;          // { device, ownerKey }: the tag this page last sent to (reconnects without the chooser)
-let wifiSyncOpen = false;    // Matches tab: the "Sync over your tag's Wi-Fi" steps are showing
+let tagLink = null;          // { device }: the tag this page last reached (reconnects without the chooser)
 let buzzIdle = 0;
 const buzzButton = document.getElementById("buzz-try"), matchButton = document.getElementById("match-try");
 
@@ -297,12 +308,9 @@ function render() {
   document.getElementById("demo-banner").hidden = !DEMO;
   if (!onProfile && !user && !DEMO) { document.getElementById("match-list").replaceChildren(); }
 
-  syncButton.hidden = onProfile || !user || wifiSyncOpen;
   button.hidden = !onProfile || mode === "wifi";   // on the Wi-Fi cards the link is the action
-  document.getElementById("wifi-sync").hidden = onProfile || !user || !wifiSyncOpen;
   const howto = mode === "howto";
-  backButton.hidden = !onProfile ? !user || !wifiSyncOpen
-                                 : mode === "summary" || (howto ? howtoStep === 1 : mode === "wizard" && step === 1);
+  backButton.hidden = !onProfile || mode === "summary" || (howto ? howtoStep === 1 : mode === "wizard" && step === 1);
   if (!onProfile) return;
 
   document.getElementById("summary").hidden = mode !== "summary";
@@ -339,10 +347,15 @@ function renderPreview() {
   });
   document.querySelectorAll(".preview").forEach(box => {
     fill(box, "[data-me-name]", p.first, "Your name");
-    box.querySelectorAll("[data-me-name]").forEach(el => el.classList.toggle("long", (p.first || "Your name").length > 9));
+    // (roughly the tag's choice by width: the name at 64 px up to ~7 letters, then 48, then 36)
+    box.querySelectorAll("[data-me-name]").forEach(el => {
+      el.classList.toggle("mid", (p.first || "Your name").length > 7);
+      el.classList.toggle("long", (p.first || "Your name").length > 9);
+    });
     // As on the tag: company | title, nothing at a dating event (a no-break space keeps the line's height)
     fill(box, "[data-me-sub]", [p.company, p.title].filter(Boolean).join("  |  "), DATING ? " " : "Company  |  Role");
-    fill(box, "[data-me-why]", signReason(samplePartner(p), p), DATING ? "Your hobbies and picks" : "Your goals and interests");
+    fill(box, "[data-me-why]", signReason(samplePartner(p), p), DATING ? "Your hobbies" : "Your goals and interests");
+    fill(box, "[data-me-opener]", signStarter(samplePartner(p), p), "");
     const badge = box.querySelector('[data-preview="badge"]'), signEl = box.querySelector('[data-preview="sign"]');
     if (signEl) { badge.hidden = sign; signEl.hidden = !sign; }
     const cap = box.querySelector("[data-preview-cap]");
@@ -366,17 +379,20 @@ function renderHowto() {
   const name = p.first || "You";
   document.querySelectorAll("#howto [data-me-name]").forEach(el => {
     el.textContent = name;
+    el.classList.toggle("mid", el.classList.contains("big") && name.length > 7);
     el.classList.toggle("long", el.classList.contains("big") && name.length > 9);
   });
   // As on the tag: company | title, nothing at a dating event (a no-break space keeps the line's height)
   document.querySelectorAll("#howto [data-me-sub]").forEach(el => el.textContent = [p.company, p.title].filter(Boolean).join("  |  ") || "\u00a0");
   // Card 3: my tag naming them and theirs naming me; card 4: them in my list, with their role. Nothing picked yet:
-  // sample wording (business: they sell, as samplePartner says)
-  const them = samplePartner(p), sample = DATING ? "Both: Slow & steady | Running, Coffee" : "Selling | AI, Fintech";
+  // sample wording (business: they sell, as samplePartner says; dating: a hint and its question, together)
+  const them = samplePartner(p), sample = DATING ? "Both night owls" : "Selling | AI, Fintech";
   document.querySelectorAll("[data-them-name]").forEach(el => el.textContent = SAMPLE_NAME);
   if (them.role) document.querySelectorAll("[data-them-role]").forEach(el => el.textContent = them.role);
   document.getElementById("why-mine").textContent = signReason(p, them) || sample;
   document.getElementById("why-theirs").textContent = signReason(them, p) || (DATING ? sample : "AI, Fintech");
+  const question = signReason(p, them) ? signStarter(p, them) : DATING ? "Ask: best late-night spot?" : "";
+  document.querySelectorAll("#howto [data-opener]").forEach(el => el.textContent = question);
   document.querySelectorAll("[data-sample-why]").forEach(el => {
     el.dataset.sampleWhy ||= el.textContent;
     el.textContent = matchReason(them) || el.dataset.sampleWhy;
@@ -386,7 +402,7 @@ function renderHowto() {
   document.querySelectorAll("#howto .dots i").forEach((d, i) => d.classList.toggle("on", i === howtoStep - 1));
   document.getElementById("howto-signin").hidden = !!user || DATING;
   if (howtoStep === 3) startSign(); else stopSign();
-  buzzButton.hidden = matchButton.hidden = !navigator.bluetooth || !(tagLink || myTag);
+  buzzButton.hidden = matchButton.hidden = !navigator.bluetooth || !myTag?.code;
   if (howtoStep !== 2 && howtoStep !== 3) buzzDisconnect();
 }
 
@@ -468,7 +484,6 @@ document.getElementById("edit").addEventListener("click", () => { mode = "wizard
 document.getElementById("howto-open").addEventListener("click", openHowto);
 document.getElementById("howto-skip").addEventListener("click", finishHowto);
 backButton.addEventListener("click", () => {
-  if (activeTab === "matches") { wifiSyncOpen = false; setStatus(""); render(); return; }
   if (mode === "howto") { howtoGo(false); return; }
   if (mode === "wifi") { mode = "summary"; setStatus(""); render(); return; }
   step = Math.max(1, step - 1); render(); window.scrollTo(0, 0);
@@ -495,23 +510,32 @@ function companyFromEmail(email) {
 }
 
 // ---------- my tag (remembered after the first send) ----------
-// { id: "501BAC1B", ownerKey: 32 hex }: the owner key is shared with the tag and unlocks its match log
+// { id: "501BAC1B", code: 16 hex }: for "Update my tag", and the walkthrough code the tag gave this phone when it
+// took the profile (only the buzz and sample match below; "" after a send over Wi-Fi). (Pages before the console
+// synced tags kept an owner key here instead: dropped on load.)
 let myTag = null;
-try { myTag = JSON.parse(localStorage.getItem("nexswap-tag") || "null"); } catch (e) {}
-function rememberTag(t) {
-  myTag = t;
-  try { localStorage.setItem("nexswap-tag", JSON.stringify(t)); } catch (e) {}
+function rememberTag(id, code = "") {
+  myTag = { id, code };
+  try { localStorage.setItem("nexswap-tag", JSON.stringify(myTag)); } catch (e) {}
 }
+try {
+  const saved = JSON.parse(localStorage.getItem("nexswap-tag") || "null");
+  if (saved && saved.id) {
+    myTag = { id: saved.id, code: /^[0-9A-F]{16}$/.test(saved.code || "") ? saved.code : "" };
+    if (saved.ownerKey) rememberTag(myTag.id, myTag.code);
+  }
+} catch (e) {}
 // ---------- Walkthrough cards 2 and 3: the tag itself plays the match buzz / a sample match sign ----------
-// Needs the owner key, like the match log. While the phone is connected the tag stops advertising (no matching),
+// Only the phone that sent the profile: the tag checks the walkthrough code it gave it (include/Proximity.c), any time
+// until the tag gets a new profile or is reset. While the phone is connected the tag stops advertising (no matching),
 // so the connection is dropped a few seconds after the last tap.
 function buzzDisconnect() {
   clearTimeout(buzzIdle);
   if (tagLink && tagLink.device.gatt.connected) tagLink.device.gatt.disconnect();
 }
 
-// Write "o=<owner key>" + suffix to the tag; the button shows progress and the note what to expect
-async function tagCommand(btn, note, suffix, labels) {
+// Write the walkthrough code (the buzz), or it + "|m" (a sample match); the button shows progress and the note what to expect
+async function tagCommand(btn, note, what, labels) {
   btn.disabled = true;
   btn.innerHTML = `<span class="spinner" aria-hidden="true"></span>${labels.busy}`;
   note.textContent = "";
@@ -519,7 +543,7 @@ async function tagCommand(btn, note, suffix, labels) {
   try {
     if (!tagLink) {                                // opened How it works later: pick the tag once
       const { device } = await connectTag(myTag.id);
-      tagLink = { device, ownerKey: myTag.ownerKey };
+      tagLink = { device };
     }
     const { device } = tagLink;
     for (let attempt = 1; !device.gatt.connected; attempt++) {
@@ -530,7 +554,7 @@ async function tagCommand(btn, note, suffix, labels) {
     let char;
     try { char = await service.getCharacteristic(SETUP_BUZZ); }
     catch (e) { note.textContent = "Your tag needs a firmware update for this."; return false; }
-    await char.writeValueWithResponse(new TextEncoder().encode(`o=${tagLink.ownerKey}${suffix}`));
+    await char.writeValueWithResponse(new TextEncoder().encode(myTag.code + what));
     ok = true;
     note.textContent = labels.done;
     clearTimeout(buzzIdle);
@@ -633,13 +657,6 @@ updateButton.addEventListener("click", async () => {
   }
 });
 
-function randomHex(bytes) {
-  return [...crypto.getRandomValues(new Uint8Array(bytes))].map(b => b.toString(16).padStart(2, "0")).join("").toUpperCase();
-}
-function newOwnerKey() {
-  return randomHex(16);
-}
-
 // ---------- account ----------
 const now = () => new Date().toISOString();
 const userName = u => u.user_metadata?.full_name || u.user_metadata?.name || "";
@@ -691,8 +708,7 @@ function samplePartner(me) {
            seek: intent | (type >= 0 ? HD_PAIRS[type] << DATING_INTENTS : 0) };
 }
 
-// The labels of shared interest bits, in the tag's order (Proximity.c matchReason): at a dating event the quick
-// picks (DATING_PICK_FIRST on) before the hobbies
+// The labels of shared interest bits: at a dating event the quick picks (DATING_PICK_FIRST on) before the hobbies
 function sharedLabels(shared) {
   const labels = DATING ? DATING_INTERESTS : INTERESTS, first = DATING ? DATING_PICK_FIRST : 0, out = [];
   for (let k = 0; k < 32; k++) {
@@ -702,23 +718,44 @@ function sharedLabels(shared) {
   return out;
 }
 
-// The reason line on me's tag for a match with them, worded as the tag words it (include/Proximity.c matchReason):
-// "Hiring | AI, Fintech", "Both: Slow & steady | Running, Coffee", "Projector meets Generator | Running"
+// The line under the name on me's tag for a match with them, worded as the tag words it: the business reason
+// (include/Proximity.c matchReason), "Hiring | AI, Fintech"; at a dating event the hint (datingSign)
 function signReason(me, them) {
+  if (DATING) return datingSign(me, them).hint;
   let out = "";
-  if (DATING) {
-    const same = [...Array(DATING_INTENTS).keys()].find(i => me.seek & them.offer & (1 << i));
-    const mine = hdType(me.offer), theirs = hdType(them.offer), types = 0xFF << DATING_INTENTS;
-    if (same !== undefined) out = `Both: ${DATING_GOALS[same]}`;
-    else if (mine >= 0 && theirs >= 0 && ((me.seek & them.offer) | (me.offer & them.seek)) & types)
-      out = `${DATING_GOALS[DATING_INTENTS + theirs]} meets ${DATING_GOALS[DATING_INTENTS + mine]}`;
-  } else {
-    for (let i = 0; i < 8 && !out; i++) {
-      if (me.seek & them.offer & (1 << i)) out = OFFER[i];
-      else if (me.offer & them.seek & (1 << i)) out = SEEK[i];
-    }
+  for (let i = 0; i < 8 && !out; i++) {
+    if (me.seek & them.offer & (1 << i)) out = OFFER[i];
+    else if (me.offer & them.seek & (1 << i)) out = SEEK[i];
   }
   return [out, sharedLabels(me.interests & them.interests).slice(0, 2).join(", ")].filter(Boolean).join(" | ");
+}
+
+// The question at the bottom of a dating sign ("" at a business event)
+function signStarter(me, them) {
+  return DATING ? datingSign(me, them).question : "";
+}
+
+// A dating sign's hint and question, as the tag words them (include/Proximity.c matchOpener): something both chose
+// ("Both night owls" / "Ask: best late-night spot?"), else a quick pick pair they split, else their goals and a
+// question. The tag picks what the fewest people nearby share and the question from both tags' IDs; the page knows
+// neither, so it takes the first shared pick, then the first shared hobby, and a sample question
+function datingSign(me, them) {
+  const shared = me.interests & them.interests;
+  const pick = [...Array(8).keys()].find(b => shared >>> DATING_PICK_FIRST + b & 1);
+  if (pick !== undefined) return { hint: DATING_PICK_HINTS[pick], question: `Ask: ${DATING_PICK_QUESTIONS[pick]}` };
+  const hobby = [...Array(DATING_PICK_FIRST).keys()].find(b => shared >>> b & 1);
+  if (hobby !== undefined)
+    return { hint: `Both into ${DATING_INTERESTS[hobby]}`, question: `Ask: ${DATING_HOBBY_QUESTIONS[hobby]}` };
+  const mine = me.interests >>> DATING_PICK_FIRST & 0xFF, theirs = them.interests >>> DATING_PICK_FIRST & 0xFF;
+  const split = [0, 1, 2, 3].find(k => (mine >> 2 * k & 1 && theirs >> 2 * k + 1 & 1) || (mine >> 2 * k + 1 & 1 && theirs >> 2 * k & 1));
+  if (split !== undefined) return { hint: DATING_SPLIT_HINTS[split], question: `Ask: ${DATING_SPLIT_QUESTIONS[split]}` };
+  const same = [...Array(DATING_INTENTS).keys()].find(i => me.seek & them.offer & (1 << i));
+  const a = hdType(me.offer), b = hdType(them.offer), types = 0xFF << DATING_INTENTS;
+  let hint = "";
+  if (same !== undefined) hint = `Both: ${DATING_GOALS[same]}`;
+  else if (a >= 0 && b >= 0 && ((me.seek & them.offer) | (me.offer & them.seek)) & types)
+    hint = `${DATING_GOALS[DATING_INTENTS + Math.min(a, b)]} + ${DATING_GOALS[DATING_INTENTS + Math.max(a, b)]}`;
+  return { hint, question: "Ask: perfect Sunday?" };
 }
 
 function fillForm(p) {
@@ -735,14 +772,14 @@ async function saveToAccount() {
   if (!user) return true;
   const { error } = await supabase.from("profiles").upsert({
     id: user.id, ...formProfile(), share_email: shareContact.checked,
-    tag_id: myTag ? myTag.id : null, owner_key: myTag ? myTag.ownerKey : null,
     last_active_at: now(), updated_at: now() });
   if (error) console.error(error);
   return !error;
 }
 
-// Link a tag to this account. Refused while someone else holds it: the first claim stands until the tags are freed
-// after the event. Called after sending a profile and after every sync (reading a tag proves this phone has it).
+// Link a tag to this account, so the console saves its match list here when the tag is returned. Refused while
+// someone else holds it: the first claim stands until the tags are freed after the event. Called after sending a
+// profile (never on a plain visit: that could re-claim a tag already handed back).
 async function claimTag(tagId) {
   const { error } = await supabase.from("tag_owners").upsert({ tag_id: tagId, uid: user.id, updated_at: now() });
   if (error) console.error(error);
@@ -782,31 +819,13 @@ try {
   if (location.hash === "#sent" && pending && pending.id === TAG_ID) {
     wifiSent = pending;
     localStorage.removeItem(WIFI_PENDING);
-    rememberTag({ id: pending.id, ownerKey: pending.ownerKey });
+    rememberTag(pending.id);
     history.replaceState(null, "", location.pathname + location.search);
     let firstTime = false;
     try { firstTime = !localStorage.getItem(ONBOARDED); } catch (e) {}
     mode = firstTime ? "howto" : "summary";
     howtoStep = 1;
     setStatus("Done! Your tag should say “Profile saved”.", "ok");
-  }
-} catch (e) {}
-
-// Back from the tag's Wi-Fi with its match log: ?tag=<id>#n=<nonce>&m=<14 hex per match: tag ID, score, age>.
-// Only with the nonce this phone sent, so a link from someone else can't add matches (and unlock cards).
-let wifiSynced = null;
-try {
-  const back = new URLSearchParams(location.hash.slice(1));
-  if (back.has("m")) {
-    const pending = JSON.parse(localStorage.getItem(WIFI_SYNC) || "null");
-    const log = back.get("m");
-    if (pending && pending.id === TAG_ID && back.get("n") === pending.nonce && /^([0-9A-F]{14})*$/.test(log)) {
-      wifiSynced = (log.match(/.{14}/g) || []).map(e => ({ tagId: e.slice(0, 8), score: parseInt(e.slice(8, 10), 16) }));
-      localStorage.removeItem(WIFI_SYNC);
-      activeTab = "matches";
-      setStatus("Saving the matches from your tag…");
-    }
-    history.replaceState(null, "", location.pathname + location.search);
   }
 } catch (e) {}
 
@@ -826,10 +845,7 @@ async function showUser(u) {
   document.getElementById("delete").hidden = !u;
   document.getElementById("share-contact-row").hidden = !u;
   render();
-  if (!u) {
-    if (wifiSynced) setStatus("Sign in to save the matches from your tag.");
-    return;
-  }
+  if (!u) return;
   document.getElementById("who").textContent = u.email || userName(u) || "your Google account";
   const avatar = document.getElementById("avatar");
   avatar.hidden = !userPhoto(u);
@@ -840,9 +856,7 @@ async function showUser(u) {
     if (data) {
       fillForm(data);
       shareContact.checked = data.share_email;
-      // just sent over Wi-Fi: that tag is the current one
-      if (data.tag_id && data.owner_key && !wifiSent) rememberTag({ id: data.tag_id, ownerKey: data.owner_key });
-      // the 24-month rule counts from the last visit or sync
+      // the 24-month rule counts from the last visit
       supabase.from("profiles").update({ last_active_at: now() }).eq("id", u.id).then(({ error }) => error && console.error(error));
       updateInterestCount();
       if (!wifiSent) {
@@ -872,17 +886,6 @@ async function showUser(u) {
     if (!claimed) setStatus(TAG_TAKEN, "err");
     else if (!saved) setStatus("Sent to your tag, but saving to your account failed. Try again later.", "err");
     wifiSent = null;
-  }
-  if (wifiSynced) {                          // the match log, back over the tag's Wi-Fi: save it like a Bluetooth sync
-    try {
-      const claimed = await claimTag(TAG_ID);   // this phone just read the tag, so it has it
-      await saveMatches(wifiSynced);
-      setStatus(claimed ? syncedText(wifiSynced.length) : TAG_TAKEN, claimed ? "ok" : "err");
-    } catch (e) {
-      console.error(e);
-      setStatus("Couldn't save the matches from your tag. Try syncing again.", "err");
-    }
-    wifiSynced = null;
   }
   try {
     await renderMatches();
@@ -914,54 +917,30 @@ async function connectTag(tagId) {
   return { device, service: await server.getPrimaryService(SETUP_SERVICE) };
 }
 
-// The tag's match log, page by page: 'M', version, total (2B LE), page, n, then n x [tagId 4B LE, score, age 2B]
-async function readMatchLog(service, ownerKey) {
-  const request = await service.getCharacteristic(SYNC_REQUEST);
-  const response = await service.getCharacteristic(SYNC_MATCHES);
-  const found = [];
-  for (let page = 0; page < 10; page++) {
-    await request.writeValueWithResponse(new TextEncoder().encode(`o=${ownerKey}|p=${page}`));
-    const view = await response.readValue();
-    const v = new Uint8Array(view.buffer, view.byteOffset, view.byteLength);
-    if (v[0] !== 0x4D) throw new Error("the tag didn't accept this phone's key");
-    const total = v[2] | (v[3] << 8), n = v[5];
-    for (let i = 0; i < n; i++) {
-      const o = 6 + i * 7;
-      found.push({ tagId: hex((v[o] | (v[o + 1] << 8) | (v[o + 2] << 16) | (v[o + 3] << 24)) >>> 0, 8), score: v[o + 4] });
-    }
-    if (n === 0 || found.length >= total) break;
-  }
-  return found;
-}
-
-// Send the profile (with this phone's owner key), then read the match log in the same connection
+// Send the profile. The match log never comes back to the phone: the console reads it when the tag is returned.
 async function sendToTag() {
-  const ownerKey = myTag && myTag.id === TAG_ID ? myTag.ownerKey : newOwnerKey();
   const { device, service } = await connectTag(TAG_ID);
   try {
     const profileChar = await service.getCharacteristic(SETUP_PROFILE);
     const statusChar = await service.getCharacteristic(SETUP_STATUS);
     setStatus("Sending…");
-    await profileChar.writeValueWithResponse(new TextEncoder().encode(`k=${SETUP_CODE}|o=${ownerKey}|${payload()}`));
+    await profileChar.writeValueWithResponse(new TextEncoder().encode(`k=${SETUP_CODE}|${payload()}`));
     const result = new TextDecoder().decode(await statusChar.readValue());
-    if (result === "ok") tagLink = { device, ownerKey };   // for "Tap to feel the buzz", without the chooser again
-    let matches = [];
-    if (result === "ok" && user) {
-      try { matches = await readMatchLog(service, ownerKey); } catch (e) { console.error(e); }
+    let code = "";
+    if (result === "ok") {                   // for "Tap to feel the buzz": the walkthrough code, on this connection only
+      try { code = new TextDecoder().decode(await (await service.getCharacteristic(SETUP_BUZZ)).readValue()); } catch (e) {}
+      if (!/^[0-9A-F]{16}$/.test(code)) code = "";
+      tagLink = { device };
     }
-    return { result, ownerKey, matches };
+    return { result, code };
   } finally {
     device.gatt.disconnect();
   }
 }
 
 // ---------- matches ----------
-// The tag's match log in one call: the database works out who wears each tag, and tags nobody has claimed yet wait
-// until someone does (save_matches and link_pending in schema.sql). The page never names an account.
-async function saveMatches(list) {
-  const { error } = await supabase.rpc("save_matches", { p_matches: list.map(m => ({ tag: m.tagId, score: m.score })) });
-  if (error) throw error;
-}
+// The console saves each returned tag's match log to the account that claimed it (console_save_tag in schema.sql);
+// this page only reads the result.
 
 // Same idea as the tag's match reason: what they bring that I want (or want that I bring), then shared interests.
 // Dating: looking for the same thing, or their type and mine when they pair, then shared hobbies
@@ -1004,7 +983,7 @@ async function renderMatches() {
     loadCard = async uid => (DATING ? DEMO_DATING_CARDS : DEMO_CARDS)[uid] || null;
   } else {
     // One call, newest first, each with its status worked out by the database (my_matches in schema.sql): mutual
-    // ones come with the card, waiting ones (they haven't synced you yet) without. Rows are keyed by tag ID.
+    // ones come with the card, waiting ones (their tag hasn't been read yet) without. Rows are keyed by tag ID.
     const { data, error } = await supabase.rpc("my_matches");
     if (error) throw error;
     const cards = new Map(data.filter(r => r.status === "mutual").map(r => [r.tag_id, {
@@ -1031,8 +1010,8 @@ async function renderMatches() {
     li.append(face, body);
     if (!card) {
       waiting++;
-      body.append(el("p", "name", "Waiting for them to sync"),
-                  el("p", "sub", "You'll see who it is once they sync their tag too."));
+      body.append(el("p", "name", "Waiting for their tag"),
+                  el("p", "sub", "You'll see who it is once their tag has been returned too."));
       list.append(li);
       continue;
     }
@@ -1064,14 +1043,14 @@ async function renderMatches() {
   if (!rows.length) {
     const empty = el("li", "empty");
     empty.append(el("strong", "", pending.size ? "Almost there" : "No matches yet"),
-                 document.createTextNode(myTag ? "Wear your tag at an event, then tap “Sync from my tag”."
+                 document.createTextNode(myTag ? "Wear your tag at the event. Your matches appear here after you return your tag at the desk."
                                                : "Send your profile to your tag first: tap its screen, then scan the QR code."));
     list.append(empty);
   }
   const notes = [];
-  if (waiting) notes.push(`${waiting} waiting for the other person to sync.`);
+  if (waiting) notes.push(`${waiting} waiting for the other person's tag to be returned.`);
   if (pending.size) notes.push(`${pending.size} matched with someone who hasn't set up their profile yet. They'll appear once they do.`);
-  hint.textContent = notes.join(" ") || "People your tag matched with. Only people who also synced you can see your details.";
+  hint.textContent = notes.join(" ") || "People your tag matched with. They see your details only if their tag matched you too.";
   const resolved = rows.length - waiting;
   const badge = document.getElementById("match-count");
   badge.textContent = resolved;
@@ -1098,45 +1077,6 @@ function datingAnswer(body, uid, card) {
   }
   body.append(actions);
 }
-
-function syncedText(n) {
-  return n ? `Synced ${n} match${n === 1 ? "" : "es"} from your tag.` : "Your tag has no matches yet.";
-}
-
-document.getElementById("sync").addEventListener("click", async () => {
-  if (!user) return;
-  if (!myTag) { setStatus("Send your profile to your tag first: tap its screen, then scan the QR code.", "err"); return; }
-  if (!navigator.bluetooth) {                // no Web Bluetooth (iPhones): the three Wi-Fi steps, then one link to the tag
-    const nonce = randomHex(8);
-    try { localStorage.setItem(WIFI_SYNC, JSON.stringify({ id: myTag.id, nonce })); } catch (e) {}
-    document.getElementById("wifi-sync-go").href = `http://192.168.4.1/m?o=${myTag.ownerKey}&n=${nonce}`;
-    wifiSyncOpen = true;
-    setStatus("");
-    render();
-    return;
-  }
-  const sync = syncButton;
-  sync.disabled = true;
-  sync.innerHTML = `<span class="spinner" aria-hidden="true"></span>Syncing…`;
-  let conn = null;
-  try {
-    setStatus("Choose your tag in the Bluetooth list…");
-    conn = await connectTag(myTag.id);
-    setStatus("Reading your matches…");
-    const found = await readMatchLog(conn.service, myTag.ownerKey);
-    const claimed = await claimTag(myTag.id);   // the tag answered this phone's key, so it's still this phone's tag
-    await saveMatches(found);
-    await renderMatches();
-    setStatus(claimed ? syncedText(found.length) : TAG_TAKEN, claimed ? "ok" : "err");
-  } catch (err) {
-    setStatus(err.name === "NotFoundError" ? "No tag chosen. Make sure your tag is on and nearby."
-              : `Couldn't sync (${err.message}).`, "err");
-  } finally {
-    if (conn) conn.device.gatt.disconnect();
-    sync.disabled = false;
-    sync.textContent = "Sync from my tag";
-  }
-});
 
 const SEND_ERRORS = {
   "closed": "The tag's code has expired. Tap the tag's screen for a new code (or Menu → Settings → Update profile if it already has your profile), then scan it.",
@@ -1172,10 +1112,9 @@ button.addEventListener("click", async () => {
   const saved = await saveToAccount();
   try {
     if (canWifi) {                                 // no Bluetooth: the three Wi-Fi steps, then one link to the tag
-      const ownerKey = myTag && myTag.id === TAG_ID ? myTag.ownerKey : newOwnerKey();
-      try { localStorage.setItem(WIFI_PENDING, JSON.stringify({ id: TAG_ID, ownerKey })); } catch (e) {}
+      try { localStorage.setItem(WIFI_PENDING, JSON.stringify({ id: TAG_ID })); } catch (e) {}
       document.getElementById("wifi-go").href =
-        `http://192.168.4.1/p?k=${SETUP_CODE}&o=${ownerKey}&p=${encodeURIComponent(payload())}`;
+        `http://192.168.4.1/p?k=${SETUP_CODE}&p=${encodeURIComponent(payload())}`;
       mode = "wifi";
       setStatus(saved && user ? "Saved to your account. Now send it to your tag." : "");
       return;
@@ -1186,15 +1125,13 @@ button.addEventListener("click", async () => {
       return;
     }
     setStatus("Choose your tag in the Bluetooth list…");
-    const { result, ownerKey, matches } = await sendToTag();
+    const { result, code } = await sendToTag();
     if (result === "ok") {
-      rememberTag({ id: TAG_ID, ownerKey });
+      rememberTag(TAG_ID, code);
       let accountOk = saved, tagTaken = false;
       if (user) {
         try {
           tagTaken = !(await claimTag(TAG_ID));
-          accountOk = (await saveToAccount()) && accountOk;   // now includes the tag
-          await saveMatches(matches);
           await renderMatches();
         } catch (e) {
           console.error(e);
