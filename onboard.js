@@ -23,7 +23,8 @@ const DATING_INTERESTS = ["Running", "Hiking", "Gym", "Yoga", "Climbing", "Cycli
 // From this bit on: the quick picks, this-or-that pairs (24 or 25, 26 or 27, ...): before hobbies in the Matches tab
 const DATING_PICK_FIRST = 24;
 // A dating sign's hint and question under the name (Taxonomy.h, the same wording; datingSign): a shared quick pick, a
-// pair split, a shared hobby ("Both into <hobby>")
+// pair split, a shared hobby ("Both into <hobby>"). About one sign in three is a game instead, one badge the lead line
+// and the other its follow (flat pairs: 2i lead, 2i + 1 follow; "" = none, then the tag picks a general one)
 const DATING_PICK_HINTS = ["Both early birds", "Both night owls", "Both dog people", "Both cat people",
   "Both into coffee dates", "Both into drinks dates", "Both planners", "Both spontaneous"];
 const DATING_PICK_QUESTIONS = ["best sunrise spot?", "best late-night spot?", "dream dog?", "best cat story?",
@@ -37,6 +38,17 @@ const DATING_HOBBY_QUESTIONS = ["best run you've done?", "favourite trail?", "wh
   "favourite beach?", "last gig?", "go-to karaoke song?", "all-time favourite film?",
   "what are you playing?", "favourite board game?", "what are you reading?", "favourite artist?",
   "best photo you took?", "your pet's name?", "what got you into it?", "why you volunteer?"];
+const DATING_PICK_GAMES = ["Describe: a sunrise spot", "Guess: where it is",
+  "Describe: a night out", "Guess: where it was", "Act out: your dream dog", "Guess: the breed", "", "",
+  "Describe: your dream cafe", "Guess: where it is", "Mime: your go-to drink", "Guess: the drink", "", "", "", ""];
+const DATING_HOBBY_GAMES = ["", "", "", "", "Mime: your workout", "Guess: the exercise",
+  "Show: a yoga pose", "Copy: their pose", "", "", "", "", "Show: a dance move", "Copy: their move",
+  "Describe: your best dish", "Guess: the dish", "", "", "Describe: your dream cafe", "Guess: where it is", "", "",
+  "Describe: a trip, no names", "Guess: the country", "Describe: a fave beach", "Guess: where it is",
+  "Hum: your last gig", "Guess: the band", "Hum: your karaoke song", "Guess: the song",
+  "Act out: a fave film", "Guess: their film", "Act out: a game", "Guess: the game",
+  "Act out: a board game", "Guess: the game", "Describe: a fave book", "Guess: the book",
+  "Describe: a fave artist", "Guess: the artist", "", "", "Act out: your pet", "Guess: the animal", "", "", "", ""];
 const DATING_GOALS = ["Slow & steady", "See where it goes", "Friends first",
   "Manifestor", "Generator", "Manifesting Gen", "Projector", "Reflector"];
 const DATING_INTENTS = 3;   // goal bits 0-2: what they're looking for (set in offer and seek); 3-7: Human Design type
@@ -385,14 +397,18 @@ function renderHowto() {
   // As on the tag: company | title, nothing at a dating event (a no-break space keeps the line's height)
   document.querySelectorAll("#howto [data-me-sub]").forEach(el => el.textContent = [p.company, p.title].filter(Boolean).join("  |  ") || "\u00a0");
   // Card 3: my tag naming them and theirs naming me; card 4: them in my list, with their role. Nothing picked yet:
-  // sample wording (business: they sell, as samplePartner says; dating: a hint and its question, together)
+  // sample wording (business: they sell, as samplePartner says; dating: a hint and a game, my tag the lead and theirs
+  // the follow; the text under it quotes a question)
   const them = samplePartner(p), sample = DATING ? "Both night owls" : "Selling | AI, Fintech";
   document.querySelectorAll("[data-them-name]").forEach(el => el.textContent = SAMPLE_NAME);
   if (them.role) document.querySelectorAll("[data-them-role]").forEach(el => el.textContent = them.role);
   document.getElementById("why-mine").textContent = signReason(p, them) || sample;
   document.getElementById("why-theirs").textContent = signReason(them, p) || (DATING ? sample : "AI, Fintech");
-  const question = signReason(p, them) ? signStarter(p, them) : DATING ? "Ask: best late-night spot?" : "";
-  document.querySelectorAll("#howto [data-opener]").forEach(el => el.textContent = question);
+  document.querySelectorAll("#howto [data-opener]").forEach(el => {
+    const lead = el.dataset.opener === "mine";
+    el.textContent = signReason(p, them) ? signStarter(p, them, lead)
+      : DATING ? DATING_PICK_GAMES[2 + !lead] : "";   // Night owl's game
+  });
   document.querySelectorAll("[data-sample-why]").forEach(el => {
     el.dataset.sampleWhy ||= el.textContent;
     el.textContent = matchReason(them) || el.dataset.sampleWhy;
@@ -730,32 +746,36 @@ function signReason(me, them) {
   return [out, sharedLabels(me.interests & them.interests).slice(0, 2).join(", ")].filter(Boolean).join(" | ");
 }
 
-// The question at the bottom of a dating sign ("" at a business event)
-function signStarter(me, them) {
-  return DATING ? datingSign(me, them).question : "";
+// The line at the bottom of a dating sign ("" at a business event): card 3 shows a game, the lead on my tag and the
+// follow on theirs, and its text quotes an "Ask:" one
+function signStarter(me, them, lead) {
+  return DATING ? datingSign(me, them, lead).question : "";
 }
 
 // A dating sign's hint and question, as the tag words them (include/Proximity.c matchOpener): something both chose
 // ("Both night owls" / "Ask: best late-night spot?"), else a quick pick pair they split, else their goals and a
-// question. The tag picks what the fewest people nearby share and the question from both tags' IDs; the page knows
-// neither, so it takes the first shared pick, then the first shared hobby, and a sample question
-function datingSign(me, them) {
+// question. The tag picks what the fewest people nearby share, the question, ask-or-game and who leads from both
+// tags' IDs; the page knows neither, so it takes the first shared pick, then the first shared hobby, and a sample.
+// lead: undefined asks; true or false, a game's lead or follow line (its own, else "Act out: your dream job")
+function datingSign(me, them, lead) {
+  const line = (questions, games, i) => lead === undefined ? `Ask: ${questions[i]}`
+    : games?.[2 * i] ? games[2 * i + !lead] : lead ? "Act out: your dream job" : "Guess: their dream job";
   const shared = me.interests & them.interests;
   const pick = [...Array(8).keys()].find(b => shared >>> DATING_PICK_FIRST + b & 1);
-  if (pick !== undefined) return { hint: DATING_PICK_HINTS[pick], question: `Ask: ${DATING_PICK_QUESTIONS[pick]}` };
+  if (pick !== undefined) return { hint: DATING_PICK_HINTS[pick], question: line(DATING_PICK_QUESTIONS, DATING_PICK_GAMES, pick) };
   const hobby = [...Array(DATING_PICK_FIRST).keys()].find(b => shared >>> b & 1);
   if (hobby !== undefined)
-    return { hint: `Both into ${DATING_INTERESTS[hobby]}`, question: `Ask: ${DATING_HOBBY_QUESTIONS[hobby]}` };
+    return { hint: `Both into ${DATING_INTERESTS[hobby]}`, question: line(DATING_HOBBY_QUESTIONS, DATING_HOBBY_GAMES, hobby) };
   const mine = me.interests >>> DATING_PICK_FIRST & 0xFF, theirs = them.interests >>> DATING_PICK_FIRST & 0xFF;
   const split = [0, 1, 2, 3].find(k => (mine >> 2 * k & 1 && theirs >> 2 * k + 1 & 1) || (mine >> 2 * k + 1 & 1 && theirs >> 2 * k & 1));
-  if (split !== undefined) return { hint: DATING_SPLIT_HINTS[split], question: `Ask: ${DATING_SPLIT_QUESTIONS[split]}` };
+  if (split !== undefined) return { hint: DATING_SPLIT_HINTS[split], question: line(DATING_SPLIT_QUESTIONS, null, split) };
   const same = [...Array(DATING_INTENTS).keys()].find(i => me.seek & them.offer & (1 << i));
   const a = hdType(me.offer), b = hdType(them.offer), types = 0xFF << DATING_INTENTS;
   let hint = "";
   if (same !== undefined) hint = `Both: ${DATING_GOALS[same]}`;
   else if (a >= 0 && b >= 0 && ((me.seek & them.offer) | (me.offer & them.seek)) & types)
     hint = `${DATING_GOALS[DATING_INTENTS + Math.min(a, b)]} + ${DATING_GOALS[DATING_INTENTS + Math.max(a, b)]}`;
-  return { hint, question: "Ask: perfect Sunday?" };
+  return { hint, question: lead === undefined ? "Ask: perfect Sunday?" : line(null, null, 0) };
 }
 
 function fillForm(p) {
