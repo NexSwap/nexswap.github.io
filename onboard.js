@@ -283,6 +283,7 @@ let activeTab = "profile";
 let mode = "wizard";        // "wizard" | "summary" | "howto" | "wifi"
 let step = 1;
 let howtoStep = 1;          // 1-4, the How it works cards
+let wifiStep = 1;           // 1-3, the Wi-Fi send cards (iPhones)
 const ONBOARDED = "nexswap-onboarded";   // set once How it works has been seen after a first send
 let busy = false;
 let tagLink = null;          // { device }: the tag this page last reached (reconnects without the chooser)
@@ -320,7 +321,9 @@ function render() {
   document.getElementById("demo-banner").hidden = !DEMO;
   if (!onProfile && !user && !DEMO) { document.getElementById("match-list").replaceChildren(); }
 
-  button.hidden = !onProfile || mode === "wifi";   // on the Wi-Fi cards the link is the action
+  const wifiLast = mode === "wifi" && wifiStep === 3;
+  button.hidden = !onProfile || wifiLast;          // on the last Wi-Fi card the link is the action
+  document.getElementById("wifi-go").hidden = !onProfile || !wifiLast;
   const howto = mode === "howto";
   backButton.hidden = !onProfile || mode === "summary" || (howto ? howtoStep === 1 : mode === "wizard" && step === 1);
   if (!onProfile) return;
@@ -344,7 +347,8 @@ function render() {
   document.querySelectorAll("#stepper .dots i").forEach((d, i) => d.classList.toggle("on", i === step - 1));
   if (howto) renderHowto();
   else stopSign();
-  if (!busy) button.textContent = howto ? (howtoStep === 4 ? "Got it" : "Next")
+  if (mode === "wifi") renderWifi();
+  if (!busy) button.textContent = howto ? (howtoStep === 4 ? "Got it" : "Next") : mode === "wifi" ? "Next"
                                         : mode === "summary" || step === 3 ? primaryLabel() : "Next";
 }
 
@@ -386,16 +390,21 @@ const SAMPLE_NAME = DATING ? "Sam" : "Alex";   // card 3's and card 4's sample m
 const reduceMotion = () => window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 let signTimers = [];
 
-function renderHowto() {
-  const p = formProfile();
+// The person's own name badge in the How it works and Wi-Fi card mocks
+function fillMe(root, p) {
   const name = p.first || "You";
-  document.querySelectorAll("#howto [data-me-name]").forEach(el => {
+  root.querySelectorAll("[data-me-name]").forEach(el => {
     el.textContent = name;
     el.classList.toggle("mid", el.classList.contains("big") && name.length > 7);
     el.classList.toggle("long", el.classList.contains("big") && name.length > 9);
   });
   // As on the tag: company | title, nothing at a dating event (a no-break space keeps the line's height)
-  document.querySelectorAll("#howto [data-me-sub]").forEach(el => el.textContent = [p.company, p.title].filter(Boolean).join("  |  ") || "\u00a0");
+  root.querySelectorAll("[data-me-sub]").forEach(el => el.textContent = [p.company, p.title].filter(Boolean).join("  |  ") || "\u00a0");
+}
+
+function renderHowto() {
+  const p = formProfile();
+  fillMe(document.getElementById("howto"), p);
   // Card 3: my tag naming them and theirs naming me; card 4: them in my list, with their role. Nothing picked yet:
   // sample wording (business: they sell, as samplePartner says; dating: a hint and a game, my tag the lead and theirs
   // the follow; the text under it quotes a question)
@@ -478,6 +487,23 @@ function howtoGo(next) {
   return true;
 }
 
+// ---------- Wi-Fi send (iPhones): three cards, then the bar's Send to my tag link ----------
+function renderWifi() {
+  fillMe(document.getElementById("wifi-send"), formProfile());
+  document.querySelectorAll(".wifi-step").forEach(el => el.hidden = Number(el.dataset.wifi) !== wifiStep);
+  document.getElementById("wifi-label").textContent = `Step ${wifiStep} of 3`;
+  document.querySelectorAll("#wifi-send .dots i").forEach((d, i) => d.classList.toggle("on", i === wifiStep - 1));
+}
+
+function wifiGo(next) {
+  if (next ? wifiStep >= 3 : wifiStep <= 1) return false;
+  wifiStep += next ? 1 : -1;
+  render();
+  window.scrollTo(0, 0);
+  slideIn(document.querySelector(`.wifi-step[data-wifi="${wifiStep}"]`), next);
+  return true;
+}
+
 function setBusy(on, label) {
   busy = on;
   button.disabled = on;
@@ -501,7 +527,7 @@ document.getElementById("howto-open").addEventListener("click", openHowto);
 document.getElementById("howto-skip").addEventListener("click", finishHowto);
 backButton.addEventListener("click", () => {
   if (mode === "howto") { howtoGo(false); return; }
-  if (mode === "wifi") { mode = "summary"; setStatus(""); render(); return; }
+  if (mode === "wifi") { if (!wifiGo(false)) { mode = "summary"; setStatus(""); render(); } return; }
   step = Math.max(1, step - 1); render(); window.scrollTo(0, 0);
 });
 
@@ -1116,6 +1142,7 @@ const SEND_ERRORS = {
 
 button.addEventListener("click", async () => {
   if (mode === "howto") { if (!howtoGo(true)) finishHowto(); return; }
+  if (mode === "wifi") { wifiGo(true); return; }
   const first = document.getElementById("first");
   if (mode === "wizard" && step === 1 && !first.value.trim()) {
     first.focus(); setStatus("Add your first name to continue.", "err"); return;
@@ -1142,6 +1169,7 @@ button.addEventListener("click", async () => {
       document.getElementById("wifi-go").href =
         `http://192.168.4.1/p?k=${SETUP_CODE}&p=${encodeURIComponent(payload())}`;
       mode = "wifi";
+      wifiStep = 1;
       setStatus(saved && user ? "Saved to your account. Now send it to your tag." : "");
       return;
     }
@@ -1188,7 +1216,7 @@ button.addEventListener("click", async () => {
 });
 
 // ---------- swipe between pages ----------
-// Wizard: left = next step, right = previous (never sends). Otherwise: left/right switches the two tabs.
+// Wizard, How it works and Wi-Fi cards: left = next, right = previous (never sends). Otherwise: left/right switches the two tabs.
 function slideIn(el, fromRight) {
   if (!el) return;
   el.classList.remove("from-right", "from-left");
@@ -1199,6 +1227,7 @@ function slideIn(el, fromRight) {
 function swipe(direction) {
   const next = direction === "left";
   if (activeTab === "profile" && mode === "howto") { howtoGo(next); return; }
+  if (activeTab === "profile" && mode === "wifi") { wifiGo(next); return; }
   if (activeTab === "profile" && mode === "wizard") {
     if (next && step < 3) {
       if (step === 1 && !document.getElementById("first").value.trim()) {
@@ -1229,6 +1258,7 @@ function swipe(direction) {
 function canSwipe(direction) {
   const next = direction === "left";
   if (activeTab === "profile" && mode === "howto") return next ? howtoStep < 4 : howtoStep > 1;
+  if (activeTab === "profile" && mode === "wifi") return next ? wifiStep < 3 : wifiStep > 1;
   if (activeTab === "profile" && mode === "wizard") {
     if (next && step === 1 && !document.getElementById("first").value.trim()) return false;   // rubber-band + message
     return next ? step < 3 : step > 1;
@@ -1236,9 +1266,10 @@ function canSwipe(direction) {
   return next ? activeTab === "profile" : activeTab === "matches";
 }
 
-// The element that moves under the finger: the current wizard step, or the whole tab
+// The element that moves under the finger: the current wizard step or card, or the whole tab
 function currentPanel() {
   if (activeTab === "profile" && mode === "howto") return document.querySelector(`.howto-step[data-howto="${howtoStep}"]`);
+  if (activeTab === "profile" && mode === "wifi") return document.querySelector(`.wifi-step[data-wifi="${wifiStep}"]`);
   if (activeTab === "profile" && mode === "wizard") return document.querySelector(`.step[data-step="${step}"]`);
   return document.getElementById(activeTab === "profile" ? "view-profile" : "matches-section");
 }

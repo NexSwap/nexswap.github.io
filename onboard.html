@@ -31,9 +31,8 @@
   /* Pixel accents, the same on every page: small labels that name a section or a place (step counts, group headings,
      captions, numbered steps) are in the pixel font; everything to read or type stays in the system font. Every
      drawing of the tag sits on the same dotted stage, and progress dots are square. */
-  .stepper p, .howto-head p, .goal-group h3, .chip-group h3, .preview figcaption, .pair figcaption, .buzz-label {
+  .stepper p, .howto-head p, .wifi-head p, .goal-group h3, .chip-group h3, .preview figcaption, .pair figcaption, .buzz-label {
     font: 12px/1.4 var(--pixel); letter-spacing: .06em; text-transform: uppercase; color: var(--dim); }
-  .wifi-steps li::marker { font-family: var(--pixel); }
   .stage, .preview { border: 1px solid var(--border); border-radius: var(--radius); background: var(--dots), var(--surface); }
   @media (prefers-reduced-motion: no-preference) { .fade { animation: fade .2s ease-out; } }
   @keyframes fade { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
@@ -85,9 +84,6 @@
   .btn-primary { background: var(--accent); color: var(--text); width: 100%; font-size: 17px; }
   .btn-primary:active { background: var(--accent-hi); }
   a.btn { text-decoration: none; }
-  .wifi-steps { margin: 0 0 16px; padding-left: 22px; color: var(--dim); }
-  .wifi-steps li { margin: 8px 0; }
-  .wifi-steps strong { color: var(--text); }
   .btn-ghost { background: none; color: var(--text); border: 1px solid var(--border); }
   .btn-link { background: none; color: var(--dim); font-weight: 500; font-size: 14px; padding: 0 8px; text-decoration: underline; }
   .btn-google { width: 100%; background: #ffffff; color: #1f1f1f; }
@@ -193,14 +189,21 @@
 
   /* How it works: four cards after the first send to a tag (and from "How it works") */
   .howto-off { display: none !important; }
-  .howto-head { display: flex; align-items: center; gap: 12px; margin: 0 0 6px; }
-  .howto-head p { margin: 0; }
+  .howto-head, .wifi-head { display: flex; align-items: center; gap: 12px; margin: 0 0 6px; }
+  .howto-head p, .wifi-head p { margin: 0; }
+  .wifi-head { min-height: var(--tap); }
   .howto-head .btn-link { margin-left: auto; min-height: var(--tap); }
   .howto-step h1 { margin: 20px 0 6px; }
   .howto-step p { color: var(--dim); margin: 0 0 10px; }
   .howto-step p strong { color: var(--text); font-weight: 600; }
   .stage { display: grid; place-items: center; padding: 18px 10px 14px; }
   .stage .sample { width: 100%; pointer-events: none; }
+  /* Wi-Fi send (iPhones): one card per step, the tag's screen on top */
+  .wifi-step .stage { background-color: var(--bg); margin: 0 0 14px; }
+  .wifi-step h2 { margin: 0 0 6px; }
+  .wifi-step p { color: var(--dim); margin: 0 0 10px; }
+  .wifi-step p:last-child { margin-bottom: 0; }
+  .wifi-step p strong { color: var(--text); font-weight: 600; }
 
   /* Badge mock: the tag's 320x240 screen, drawn to match the firmware (ui_Screen2.c) */
   /* --u: one pixel of the full-size mock (300 px wide); the pair on card 3 shrinks it to fit (.pair below) */
@@ -269,6 +272,19 @@
   .tagmock.look-2 .small { color: #ece6df; }
   .tagmock.look-2 .opener { color: #f5f0ea; }
   /* While the other badge's answer is on its way: a shimmer bar holds the name's place */
+  /* The setup screen (ui_Screen2.c ui_setup_panel): a QR on white at the left, title, hint and button at the right */
+  .tagmock.setup { flex-direction: row; justify-content: space-between; align-items: center; gap: calc(var(--u) * 10);
+                   padding: calc(var(--u) * 12); text-align: left; }
+  .tagmock .qr { flex: none; width: 56%; aspect-ratio: 1; padding: calc(var(--u) * 8); border-radius: calc(var(--u) * 12); background: #fff; }
+  .tagmock .qr svg { display: block; width: 100%; height: 100%; fill: #000; }
+  .tagmock .col { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: calc(var(--u) * 8); }
+  .tagmock .title { color: #fff; font-size: calc(var(--u) * 28); font-weight: 500; line-height: 1.05; }
+  .tagmock .hint { color: #a09aae; font-size: calc(var(--u) * 13); margin: 0; }
+  .tagmock .tbtn { display: grid; place-items: center; height: calc(var(--u) * 34); border: max(1px, var(--u)) solid #fff;
+                   border-radius: calc(var(--u) * 10); color: #fff; font-size: calc(var(--u) * 13); white-space: nowrap; }
+  /* What to tap or scan: an accent ring (breathing, unless motion is reduced) */
+  .tagmock .pulse { box-shadow: 0 0 0 calc(var(--u) * 3) var(--accent-hi); }
+  .tagmock .tbtn.pulse { border-color: var(--accent-hi); }
   .tagmock .shimmer { display: none; width: 70%; height: calc(var(--u) * 32); border-radius: calc(var(--u) * 8);
                       background: linear-gradient(90deg, #2e2838 35%, #4a4258 50%, #2e2838 65%) #2e2838; background-size: 250% 100%; }
   .tagmock.waiting .shimmer { display: block; }
@@ -279,7 +295,9 @@
     .tagmock .big.fadein { animation: fadein .35s ease-out; }
     .tagmock.buzz { animation: buzz 2.4s infinite; }
     .buzz-label { animation: buzz-label 2.4s infinite; }
+    .tagmock .pulse { animation: ring 1.1s ease-in-out infinite alternate; }
   }
+  @keyframes ring { from { box-shadow: 0 0 0 calc(var(--u) * 1) #a24fd0cc; } to { box-shadow: 0 0 0 calc(var(--u) * 6) #a24fd033; } }
   @keyframes breathe { from { opacity: .3; } to { opacity: 1; } }
   @keyframes sweep { from { background-position: 100% 0; } to { background-position: -50% 0; } }
   @keyframes fadein { from { opacity: 0; } to { opacity: 1; } }
@@ -350,17 +368,54 @@
       </div>
     </div>
 
-    <!-- Browsers without Web Bluetooth (iPhones): the profile goes to the tag over its own Wi-Fi, as one link -->
-    <div id="wifi-send" class="card" hidden>
-      <h2>Send it to your tag</h2>
-      <ol class="wifi-steps">
-        <li>On your tag, tap <strong>Connect phone</strong>.</li>
-        <li>Scan the Wi-Fi code on the tag with your camera and tap <strong>Join</strong>.</li>
-        <li>Come back here and tap <strong>Send to my tag</strong>.</li>
-      </ol>
-      <a id="wifi-go" class="btn btn-primary" href="#">Send to my tag</a>
-      <p class="hint" style="margin:12px 0 0"><span data-only="business">Your tag has no internet, so sign in before this step. </span>After sending, your phone goes back to its usual connection.</p>
-    </div>
+    <!-- Browsers without Web Bluetooth (iPhones): the profile goes to the tag over its own Wi-Fi, as one link (the bar's
+         Send to my tag, on the last card). Three cards, each with the tag's screen at that point (ui_Screen2.c
+         ui_show_setup, WifiSetup.c) -->
+    <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+      <!-- A drawing of a QR code, not a real one: three finder squares and a fixed scatter of modules -->
+      <symbol id="qr-art" viewBox="0 0 21 21">
+        <path d="M0 0h7v7H0zM1 1v5h5V1zM2 2h3v3H2zM14 0h7v7h-7zM15 1v5h5V1zM16 2h3v3h-3zM0 14h7v7H0zM1 15v5h5v-5zM2 16h3v3H2z" fill-rule="evenodd"/>
+        <path d="M8 0h1v2H8zM10 1h2v1h-2zM9 3h2v2H9zM12 3h1v3h-1zM8 6h1v1H8zM10 6h1v2h-1zM0 8h2v1H0zM3 8h3v1H3zM7 9h2v2H7zM11 8h2v1h-2zM14 8h1v2h-1zM16 8h3v1h-3zM20 9h1v3h-1zM1 10h1v2H1zM4 10h2v1H4zM9 11h3v1H9zM13 10h2v2h-2zM17 10h2v2h-2zM3 12h2v1H3zM6 12h1v2H6zM8 13h1v2H8zM10 13h2v1h-2zM15 13h2v1h-2zM19 13h2v1h-2zM12 15h2v2h-2zM9 16h2v1H9zM16 15h1v3h-1zM18 16h2v1h-2zM8 18h3v1H8zM13 18h2v1h-2zM18 18h1v3h-1zM9 20h2v1H9zM14 20h3v1h-3zM20 19h1v2h-1z"/>
+      </symbol>
+    </svg>
+    <section id="wifi-send" aria-labelledby="wifi-title" hidden>
+      <div class="wifi-head">
+        <p id="wifi-label">Step 1 of 3</p>
+        <div class="dots" aria-hidden="true"><i class="on"></i><i></i><i></i></div>
+      </div>
+
+      <div class="card wifi-step fade" data-wifi="1">
+        <div class="stage" aria-hidden="true">
+          <div class="tagmock setup"><span class="qr"><svg><use href="#qr-art"/></svg></span>
+            <span class="col"><span class="title">SCAN ME</span><span class="tbtn pulse">Connect phone</span></span></div>
+        </div>
+        <h2 id="wifi-title">Tap Connect phone</h2>
+        <p>On your tag's screen, tap <strong>Connect phone</strong>. If it says <strong>Tap here to set up</strong>,
+          tap it first.</p>
+        <p data-only="business">Your tag has no internet, so sign in before this step.</p>
+      </div>
+
+      <div class="card wifi-step" data-wifi="2" hidden>
+        <div class="stage" aria-hidden="true">
+          <div class="tagmock setup"><span class="qr pulse"><svg><use href="#qr-art"/></svg></span>
+            <span class="col"><span class="title">SCAN ME</span><span class="hint">then tap Join</span>
+              <span class="tbtn">Cancel</span></span></div>
+        </div>
+        <h2>Join the tag's Wi-Fi</h2>
+        <p>Open your <strong>Camera</strong>, point it at the code on the tag and tap <strong>Join</strong>. The tag's
+          Wi-Fi stays on for 3 minutes.</p>
+      </div>
+
+      <div class="card wifi-step" data-wifi="3" hidden>
+        <div class="stage" aria-hidden="true">
+          <div class="tagmock"><p class="big" data-me-name></p><span class="rule"></span><p class="small" data-me-sub></p></div>
+        </div>
+        <h2>Come back and send</h2>
+        <p>Come back to this page and tap <strong>Send to my tag</strong>. Your tag should say <strong>Profile
+          saved</strong>.</p>
+        <p>After sending, your phone goes back to its usual connection.</p>
+      </div>
+    </section>
 
     <!-- How it works: four cards, shown once after the first send to a tag, and from "How it works" -->
     <section id="howto" aria-labelledby="howto-title" hidden>
@@ -550,6 +605,7 @@
   <div class="actions-row">
     <button id="back" class="btn btn-ghost" type="button" hidden>Back</button>
     <button id="write" class="btn btn-primary" type="button">Next</button>
+    <a id="wifi-go" class="btn btn-primary" href="#" hidden>Send to my tag</a>
   </div>
 </div></div>
 
