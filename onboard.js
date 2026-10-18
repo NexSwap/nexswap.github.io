@@ -332,11 +332,11 @@ function render() {
   document.getElementById("howto").hidden = !howto;
   // Setup banners and privacy notes are about sending a profile, not about the walkthrough
   ["tag-banner", "unsupported", "privacy"].forEach(id => document.getElementById(id).classList.toggle("howto-off", howto));
-  // Sign-in card: only where it helps (first step, or under a returning user's summary), not on every step
+  // Sign-in card: only where it helps (first step, or above a returning user's summary), not on every step. Above the
+  // summary, not under it: the summary looks like an account page, and someone not signed in took it for one and never
+  // scrolled to the button (2026-10-18)
   const signedOut = document.getElementById("signed-out");
   signedOut.hidden = !!user || DATING || howto || (mode === "wizard" && step > 1);
-  const summary = document.getElementById("summary");
-  if (mode === "summary") summary.after(signedOut); else summary.before(signedOut);
   if (mode === "summary") fillSummary();
   if (mode === "summary" || mode === "wizard") renderPreview();
   document.querySelectorAll(".step").forEach(f => f.hidden = Number(f.dataset.step) !== step);
@@ -599,7 +599,7 @@ buzzButton.addEventListener("click", async () => {
 
 matchButton.addEventListener("click", () => tagCommand(matchButton, document.getElementById("match-note"), "|m", {
   idle: "Show a sample match on my tag", busy: "Sending…", again: "Show another look",
-  done: `Watch your tag: it waits for the other badge, then shows “${DATING ? "Sam" : "Alex Tan"}” and buzzes. Each try shows a different look.` }));
+  done: `Watch your tag: it shows “${DATING ? "Sam" : "Alex Tan"}” and buzzes. Each try shows a different look.` }));
 
 // ---------- "Update my tag": new firmware over Bluetooth (include/Ota.c in the tag firmware) ----------
 // firmware/manifest.json (next to this page, written by release_firmware.sh) says which build is current. The tag
@@ -678,6 +678,9 @@ const now = () => new Date().toISOString();
 const userName = u => u.user_metadata?.full_name || u.user_metadata?.name || "";
 const userPhoto = u => u.user_metadata?.avatar_url || u.user_metadata?.picture || "";
 const TAG_TAKEN = "This tag is still linked to someone from an earlier event. Ask the organiser to reset the tags.";
+// Sent without signing in: the tag works, but nothing links it to an account (the claim is made when sending), so
+// matches can't be saved. Said plainly, as "Done!" alone let people think they were signed in (2026-10-18)
+const SENT_SIGNED_OUT = "Sent to your tag. To get your matches after the event, sign in with Google and send it again.";
 const shareContact = document.getElementById("share-contact");   // email and LinkedIn on the card (on by default)
 
 // Dating: offer = what they're looking for + their own Human Design type, seek = the same + the types it pairs with
@@ -865,7 +868,10 @@ async function showUser(u) {
   document.getElementById("delete").hidden = !u;
   document.getElementById("share-contact-row").hidden = !u;
   render();
-  if (!u) return;
+  if (!u) {
+    if (wifiSent && !DATING) { setStatus(SENT_SIGNED_OUT); wifiSent = null; }   // (back from the tag's Wi-Fi, signed out)
+    return;
+  }
   document.getElementById("who").textContent = u.email || userName(u) || "your Google account";
   const avatar = document.getElementById("avatar");
   avatar.hidden = !userPhoto(u);
@@ -879,7 +885,7 @@ async function showUser(u) {
       // the 24-month rule counts from the last visit
       supabase.from("profiles").update({ last_active_at: now() }).eq("id", u.id).then(({ error }) => error && console.error(error));
       updateInterestCount();
-      if (!wifiSent) {
+      if (!wifiSent && mode !== "howto") {      // (?howto=1, or the walkthrough already open, stays open)
         mode = "summary";
         if (!TAG_ID) activeTab = "matches";    // returning visit without a tag: matches are the likely reason
         setStatus("");
@@ -1164,6 +1170,7 @@ button.addEventListener("click", async () => {
       mode = firstTime ? "howto" : "summary";
       howtoStep = 1;
       if (tagTaken) setStatus(`Sent to your tag. ${TAG_TAKEN}`, "err");
+      else if (!user && !DATING) setStatus(SENT_SIGNED_OUT);
       else setStatus(accountOk ? "Done! Your tag should say “Profile saved”."
                                : "Sent to your tag, but saving to your account failed. Try again later.", accountOk ? "ok" : "err");
     } else {
