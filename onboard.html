@@ -476,13 +476,12 @@
             <p class="name">Alex</p><p class="sub" data-them-role>Head of Sales · Demo Co</p><p class="why" data-sample-why>Selling · AI, Fintech</p>
             <div class="actions"><span class="btn btn-ghost">LinkedIn</span></div></div></li></ul>
           <ul class="match-list sample" data-only="dating" hidden><li class="match"><div class="initials">S</div><div>
-            <p class="name">Sam</p><p class="why" data-sample-why>Both: Slow &amp; steady · Running, Coffee</p><p class="sub">See them again?</p>
-            <div class="actions"><span class="btn btn-ghost">Yes</span><span class="btn btn-ghost">Not now</span></div></div></li></ul>
+            <p class="name">Sam</p><p class="why" data-sample-why>Both: Slow &amp; steady · Running, Coffee</p><p class="sub">It's mutual! @sam.runs.sg</p></div></li></ul>
         </div>
         <h1>After the event</h1>
         <p data-only="business">Return your tag at the desk. Your <strong>Matches</strong> then show everyone you met, with their LinkedIn.</p>
-        <p data-only="dating" hidden>Open <strong>Matches</strong> and say who you'd like to see again. Their contact
-          details show only if you <strong>both say yes</strong>.</p>
+        <p data-only="dating" hidden>Return your tag at the desk. <strong>Matches</strong> then shows everyone you
+          <strong>both tapped Bae</strong> on, with their handle.</p>
         <p id="howto-signin">Sign in with Google to keep them after the event.</p>
       </div>
     </section>
@@ -521,6 +520,10 @@
         <div class="goal-group" data-only="dating" hidden><h3>I am</h3><div class="chips" id="iam"></div></div>
         <div class="goal-group" data-only="dating" hidden><h3>I'd like to meet</h3><div class="chips" id="open"></div>
           <p class="hint">Tick any. Leave them all unticked to meet everyone.</p></div>
+        <label class="field" data-only="dating" hidden><span>Instagram or Telegram (optional)</span>
+          <input type="text" id="handle" maxlength="40" autocomplete="off" autocapitalize="none" spellcheck="false"
+                 enterkeyhint="done" placeholder="@yourhandle">
+          <p class="hint">Only people you both tap Bae on see it, after the event. Never on your tag. Needs sign-in.</p></label>
       </fieldset>
 
       <fieldset class="step fade" data-step="2" hidden>
@@ -565,9 +568,15 @@
          like to meet over Bluetooth to the other tags here; anyone nearby with a Bluetooth scanner app could read them,
          but not your name. When your tag matches someone, it also broadcasts your first name, and both tags show each
          other's first name.</p>
-      <p>Nothing is saved to an account. This phone remembers your answers so you can send them again quickly. The
-         organiser resets every tag after the event, which clears your answers from it. This event is for people aged 18
-         and over.</p>
+      <p>Signing in is optional. If you continue with Google, your first name, handle, hobbies, quick picks and what
+         you're looking for<span data-hd hidden> (and your type)</span> are saved to your NexSwap account (Supabase,
+         Singapore region). When you return your tag, we copy who it matched and whether you tapped Bae or Nay. Who you
+         are and would like to meet is never saved. Your first name and handle are shown only to people you both tapped
+         Bae on; nobody is told about a Nay. Your dating profile and matches are deleted after 30 days, or any time
+         with the button below.</p>
+      <p>Without signing in, nothing is saved to an account and you won't see your matches. This phone remembers your
+         answers so you can send them again quickly. The organiser resets every tag after the event, which clears your
+         answers from it. This event is for people aged 18 and over.</p>
       </div>
       <div data-only="business">
       <p>Your profile (first name, company, title, LinkedIn URL, interests and goals) is written to your NexSwap tag,
@@ -594,8 +603,6 @@
     <h1>Your matches</h1>
     <p class="lead" id="matches-hint">People your tag matched with appear here after you return your tag at the end of the event.</p>
     <ul id="match-list" class="match-list"></ul>
-    <div id="matches-dating" class="empty" hidden><strong>Your matches show here after the event</strong>
-      You'll choose who you'd like to see again. Contact details are shared only when you both say yes.</div>
     <div id="matches-signin" class="empty" hidden><strong>Sign in to see your matches</strong>
       Matches are saved to your account so you can follow up after the event.
       <button id="google-matches" class="btn btn-google" type="button" style="margin-top:16px">Continue with Google</button></div>

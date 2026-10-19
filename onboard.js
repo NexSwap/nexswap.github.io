@@ -88,16 +88,16 @@ const DEMO_CARDS = {
                   photoURL: "", interests: 0x0804, offer: 0x08, seek: 0x02 },
 };
 const DEMO_ROWS = [{ uid: "demo-alex" }, { uid: "demo-priya" }, { uid: "demo-waiting" }];
-// ?demo=1&e=d: dating sample people, with the "See them again?" answer (Sam says yes too: contact shown)
+// ?demo=1&e=d: dating sample people, both mutual Baes (Jo left no handle)
 const DEMO_DATING_CARDS = {
-  "demo-alex":  { first: "Sam", why: "Both: Slow & steady · Running, Coffee", mutual: "@sam.runs.sg" },
+  "demo-alex":  { first: "Sam", why: "Both: Slow & steady · Running, Coffee", handle: "@sam.runs.sg" },
   "demo-priya": { first: "Jo", why: "Projector meets Generator · Live music, Board games" },
 };
 const TAG_ID = /^[0-9A-Fa-f]{8}$/.test(params.get("tag") || "") ? params.get("tag").toUpperCase() : "";
 const SETUP_CODE = /^[0-9A-Fa-f]{6}$/.test(params.get("k") || "") ? params.get("k").toUpperCase() : "";
 // A dating event: the tag's QR adds &e=d (its event type, set from the organiser's console). The dating form, a v2
-// profile, and no account (the database has no tables or rules for dating profiles yet). A link without it (a bookmark, Matches
-// later) uses what the last link with a tag or e= said, so a profile saved without a tag opens again.
+// profile, and an optional account (dating.profiles in schema.sql, apart from business profiles). A link without it (a
+// bookmark, Matches later) uses what the last link with a tag or e= said, so a profile saved without a tag opens again.
 // A Human Design night adds &h=1 (the tag's "hd" setting): only then does the form ask for the type ("h" stored).
 const KIND_KEY = "nexswap-kind";
 let storedKind = null;
@@ -118,7 +118,8 @@ if (DATING) {
   document.querySelectorAll(".tagmock.sign").forEach(el => el.classList.add("dating"));   // big name, one-line hint
   document.getElementById("howto-looking").textContent = "Hoping to meet";
   HD_TYPES.forEach((t, i) => document.getElementById("hd").append(new Option(`${t}: ${HD_BLURBS[i]}`, i)));
-  document.getElementById("matches-hint").textContent = "People your tag matched with at this event.";
+  document.getElementById("matches-hint").textContent = "People you both tapped Bae on, after the event.";
+  document.querySelector("#signed-out .hint").textContent = "Sign in to see your mutual Baes after the event.";
 }
 
 // value = bit (labels "" are unused bits); box and bits let a group hold some of the labels
@@ -205,7 +206,7 @@ function payload() {
 }
 
 // Remember the form on this phone so a re-write is quick (a dating profile apart from the business one)
-const FIELDS = ["first", "company", "title", "linkedin"];
+const FIELDS = ["first", "company", "title", "linkedin", "handle"];
 const FORM_KEY = DATING ? "nexswap-profile-d" : "nexswap-profile";
 const DATING_BOXES = ["iam", "open", "intent", "picks"];
 function saveForm() {
@@ -322,8 +323,7 @@ function render() {
   document.getElementById("matches-section").hidden = onProfile;
   document.getElementById("tab-profile").setAttribute("aria-selected", onProfile);
   document.getElementById("tab-matches").setAttribute("aria-selected", !onProfile);
-  document.getElementById("matches-signin").hidden = onProfile || !!user || DEMO || DATING;
-  document.getElementById("matches-dating").hidden = onProfile || DEMO || !DATING;
+  document.getElementById("matches-signin").hidden = onProfile || !!user || DEMO;
   document.getElementById("demo-banner").hidden = !DEMO;
   if (!onProfile && !user && !DEMO) { document.getElementById("match-list").replaceChildren(); }
 
@@ -345,7 +345,7 @@ function render() {
   // summary, not under it: the summary looks like an account page, and someone not signed in took it for one and never
   // scrolled to the button (2026-10-18)
   const signedOut = document.getElementById("signed-out");
-  signedOut.hidden = !!user || DATING || howto || (mode === "wizard" && step > 1);
+  signedOut.hidden = !!user || howto || (mode === "wizard" && step > 1);
   if (mode === "summary") fillSummary();
   if (mode === "summary" || mode === "wizard") renderPreview();
   document.querySelectorAll(".step").forEach(f => f.hidden = Number(f.dataset.step) !== step);
@@ -431,7 +431,7 @@ function renderHowto() {
   document.querySelectorAll(".howto-step").forEach(el => el.hidden = Number(el.dataset.howto) !== howtoStep);
   document.getElementById("howto-label").textContent = `${howtoStep} of 4`;
   document.querySelectorAll("#howto .dots i").forEach((d, i) => d.classList.toggle("on", i === howtoStep - 1));
-  document.getElementById("howto-signin").hidden = !!user || DATING;
+  document.getElementById("howto-signin").hidden = !!user;
   if (howtoStep === 3) startSign(); else stopSign();
   buzzButton.hidden = matchButton.hidden = !navigator.bluetooth || !myTag?.code;
   if (howtoStep !== 2 && howtoStep !== 3) buzzDisconnect();
@@ -712,11 +712,12 @@ const userPhoto = u => u.user_metadata?.avatar_url || u.user_metadata?.picture |
 const TAG_TAKEN = "This tag is still linked to someone from an earlier event. Ask the organiser to reset the tags.";
 // Sent without signing in: the tag works, but nothing links it to an account (the claim is made when sending), so
 // matches can't be saved. Said plainly, as "Done!" alone let people think they were signed in (2026-10-18)
-const SENT_SIGNED_OUT = "Sent to your tag. To get your matches after the event, sign in with Google and send it again.";
+const SENT_SIGNED_OUT = `Sent to your tag. To ${DATING ? "see your mutual Baes" : "get your matches"} after the event, sign in with Google and send it again.`;
 const shareContact = document.getElementById("share-contact");   // email and LinkedIn on the card (on by default)
 
 // Dating: offer = what they're looking for + their own Human Design type, seek = the same + the types it pairs with
-// (HD_PAIRS); who = I am (bits 0-1) + who they'd like to meet (bits 2-4). Company, title and LinkedIn stay empty.
+// (HD_PAIRS); who = I am (bits 0-1) + who they'd like to meet (bits 2-4), for the tag only (never saved to the
+// account); handle = for mutual Baes, for the account only. Company, title and LinkedIn stay empty.
 function formProfile() {
   const v = id => clean(document.getElementById(id).value);
   if (DATING) {
@@ -725,7 +726,7 @@ function formProfile() {
     return { first: v("first"), company: "", title: "", linkedin: "", interests: (mask("interests") | mask("picks")) >>> 0,
              offer: intent | (hd >= 0 ? 1 << (DATING_INTENTS + hd) : 0),
              seek: intent | (hd >= 0 ? HD_PAIRS[hd] << DATING_INTENTS : 0),
-             who: (i === 3 ? 0 : i + 1) | mask("open") << 2 };
+             who: (i === 3 ? 0 : i + 1) | mask("open") << 2, handle: v("handle") };
   }
   return { first: v("first"), company: v("company"), title: v("title"), linkedin: v("linkedin"),
            interests: mask("interests"), offer: mask("offer"), seek: mask("seek") };
@@ -822,21 +823,27 @@ function fillForm(p) {
 }
 
 // Only the profile: the database builds the card mutual matches see from it (build_card in schema.sql), with the
-// email and LinkedIn link only when sharing is on (the tag still hands the link to people who tap it)
+// email and LinkedIn link only when sharing is on (the tag still hands the link to people who tap it). Dating: the
+// dating profile, through save_dating_profile (the dating tables are hidden from the page), without who.
 async function saveToAccount() {
   if (!user) return true;
-  const { error } = await supabase.from("profiles").upsert({
-    id: user.id, ...formProfile(), share_email: shareContact.checked,
-    last_active_at: now(), updated_at: now() });
+  const p = formProfile();
+  const { error } = DATING
+    ? await supabase.rpc("save_dating_profile", { p_first: p.first, p_handle: p.handle, p_interests: p.interests,
+                                                  p_offer: p.offer, p_seek: p.seek })
+    : await supabase.from("profiles").upsert({ id: user.id, ...p, share_email: shareContact.checked,
+                                               last_active_at: now(), updated_at: now() });
   if (error) console.error(error);
   return !error;
 }
 
 // Link a tag to this account, so the console saves its match list here when the tag is returned. Refused while
 // someone else holds it: the first claim stands until the tags are freed after the event. Called after sending a
-// profile (never on a plain visit: that could re-claim a tag already handed back).
+// profile (never on a plain visit: that could re-claim a tag already handed back). kind: which tables the console saves
+// its log to (dating.matches with the votes, or matches).
 async function claimTag(tagId) {
-  const { error } = await supabase.from("tag_owners").upsert({ tag_id: tagId, uid: user.id, updated_at: now() });
+  const { error } = await supabase.from("tag_owners").upsert({ tag_id: tagId, uid: user.id, kind: DATING ? "d" : "b",
+                                                               updated_at: now() });
   if (error) console.error(error);
   return !error;
 }
@@ -859,7 +866,7 @@ document.getElementById("delete").addEventListener("click", async () => {
     if (error) throw error;
     try { localStorage.removeItem("nexswap-tag"); } catch (e) {}
     myTag = null;
-    try { localStorage.removeItem("nexswap-profile"); } catch (e) {}
+    try { localStorage.removeItem(FORM_KEY); } catch (e) {}
     await supabase.auth.signOut({ scope: "local" });   // the account is gone: just forget the session on this phone
     setStatus("Your saved profile was deleted.", "ok");
   } catch (e) {
@@ -888,7 +895,7 @@ try {
 // matters. Handled outside the callback, since Supabase calls made inside it can wait on each other forever.
 let shownUserId;
 supabase.auth.onAuthStateChange((_event, session) => {
-  const u = DATING ? null : session?.user ?? null;   // dating profiles stay on the phone and the tag (no account yet)
+  const u = session?.user ?? null;
   if ((u ? u.id : null) === shownUserId) return;
   shownUserId = u ? u.id : null;
   setTimeout(() => showUser(u));
@@ -898,10 +905,10 @@ async function showUser(u) {
   user = u;
   document.getElementById("signed-in").hidden = !u;
   document.getElementById("delete").hidden = !u;
-  document.getElementById("share-contact-row").hidden = !u;
+  document.getElementById("share-contact-row").hidden = !u || DATING;
   render();
   if (!u) {
-    if (wifiSent && !DATING) { setStatus(SENT_SIGNED_OUT); wifiSent = null; }   // (back from the tag's Wi-Fi, signed out)
+    if (wifiSent) { setStatus(SENT_SIGNED_OUT); wifiSent = null; }   // (back from the tag's Wi-Fi, signed out)
     return;
   }
   document.getElementById("who").textContent = u.email || userName(u) || "your Google account";
@@ -909,7 +916,8 @@ async function showUser(u) {
   avatar.hidden = !userPhoto(u);
   if (userPhoto(u)) avatar.src = userPhoto(u);
   try {
-    const { data, error } = await supabase.from("profiles").select("*").eq("id", u.id).maybeSingle();
+    // (dating: no business profile to load; the dating form is on this phone and goes to the account on Send)
+    const { data, error } = DATING ? {} : await supabase.from("profiles").select("*").eq("id", u.id).maybeSingle();
     if (error) throw error;
     if (data) {
       fillForm(data);
@@ -928,10 +936,11 @@ async function showUser(u) {
         document.getElementById("first").value = userName(u).split(" ")[0].slice(0, 12);
       }
       const company = document.getElementById("company");
-      const guess = companyFromEmail(u.email);
+      const guess = DATING ? "" : companyFromEmail(u.email);
       if (!company.value && guess) company.value = guess;
       saveForm();
       if (!hasProfile()) { mode = "wizard"; step = 1; }
+      else if (DATING && !TAG_ID && !wifiSent && mode !== "howto") activeTab = "matches";   // after the event
       render();
       setStatus(guess ? `We guessed your company from your email (${guess}). Edit it if it's wrong.` : "");
     }
@@ -1036,9 +1045,19 @@ async function renderMatches() {
   const hint = document.getElementById("matches-hint");
   let rows, pending, loadCard;
   if (DEMO) {
-    rows = DEMO_ROWS;
-    pending = { size: 1 };
+    rows = DATING ? DEMO_ROWS.slice(0, 2) : DEMO_ROWS;
+    pending = { size: DATING ? 0 : 1 };
     loadCard = async uid => (DATING ? DEMO_DATING_CARDS : DEMO_CARDS)[uid] || null;
+  } else if (DATING) {
+    // Mutual Baes only, newest first, with their handle (my_dating_matches in schema.sql): a Nay, no tap and a tag not
+    // synced yet all look the same, nothing
+    const { data, error } = await supabase.rpc("my_dating_matches");
+    if (error) throw error;
+    const cards = new Map(data.map(r => [r.tag_id, { first: r.first, handle: r.handle,
+      interests: Number(r.interests), offer: r.offer, seek: r.seek }]));
+    rows = data.map(r => ({ uid: r.tag_id }));
+    pending = { size: 0 };
+    loadCard = async key => cards.get(key) || null;
   } else {
     // One call, newest first, each with its status worked out by the database (my_matches in schema.sql): mutual
     // ones come with the card, waiting ones (their tag hasn't been read yet) without. Rows are keyed by tag ID.
@@ -1079,7 +1098,7 @@ async function renderMatches() {
     const why = card.why || matchReason(card);
     if (why) body.append(el("p", "why", why));
     if (DATING) {
-      datingAnswer(body, row.uid, card);
+      body.append(el("p", "sub", card.handle ? `It's mutual! ${card.handle}` : "It's mutual!"));
       list.append(li);
       continue;
     }
@@ -1100,40 +1119,21 @@ async function renderMatches() {
 
   if (!rows.length) {
     const empty = el("li", "empty");
-    empty.append(el("strong", "", pending.size ? "Almost there" : "No matches yet"),
-                 document.createTextNode(myTag ? "Wear your tag at the event. Your matches appear here after you return your tag at the desk."
-                                               : "Send your profile to your tag first: tap its screen, then scan the QR code."));
+    empty.append(el("strong", "", pending.size ? "Almost there" : DATING ? "No mutual Baes yet" : "No matches yet"),
+                 document.createTextNode(!myTag ? "Send your profile to your tag first: tap its screen, then scan the QR code."
+                   : DATING ? "Tap Bae on the people you'd like to see again. Mutual Baes show here once both tags are back at the desk."
+                   : "Wear your tag at the event. Your matches appear here after you return your tag at the desk."));
     list.append(empty);
   }
   const notes = [];
   if (waiting) notes.push(`${waiting} waiting for the other person's tag to be returned.`);
   if (pending.size) notes.push(`${pending.size} matched with someone who hasn't set up their profile yet. They'll appear once they do.`);
-  hint.textContent = notes.join(" ") || "People your tag matched with. They see your details only if their tag matched you too.";
+  hint.textContent = notes.join(" ") || (DATING ? "People you both tapped Bae on. Only they see your first name and handle."
+                                               : "People your tag matched with. They see your details only if their tag matched you too.");
   const resolved = rows.length - waiting;
   const badge = document.getElementById("match-count");
   badge.textContent = resolved;
   badge.hidden = resolved === 0;
-}
-
-// Dating: "See them again?" Their contact shows only once both said yes. (Only the demo so far: saving the answers
-// and the contact, with database rules that keep it from anyone who didn't say yes back, comes with the pilot.)
-const datingYes = new Set(), datingNo = new Set();
-function datingAnswer(body, uid, card) {
-  if (datingNo.has(uid)) { body.append(el("p", "sub", "Not now. Nothing is shared.")); return; }
-  if (datingYes.has(uid)) {
-    body.append(el("p", "sub", card.mutual ? `It's mutual! ${card.mutual}`
-                                           : "You said yes. If they say yes too, you'll both see each other's contact here."));
-    return;
-  }
-  body.append(el("p", "sub", "See them again?"));
-  const actions = el("div", "actions");
-  for (const [label, set] of [["Yes", datingYes], ["Not now", datingNo]]) {
-    const b = el("button", "btn btn-ghost", label);
-    b.type = "button";
-    b.addEventListener("click", () => { set.add(uid); renderMatches(); });
-    actions.append(b);
-  }
-  body.append(actions);
 }
 
 const SEND_ERRORS = {
@@ -1204,7 +1204,7 @@ button.addEventListener("click", async () => {
       mode = firstTime ? "howto" : "summary";
       howtoStep = 1;
       if (tagTaken) setStatus(`Sent to your tag. ${TAG_TAKEN}`, "err");
-      else if (!user && !DATING) setStatus(SENT_SIGNED_OUT);
+      else if (!user) setStatus(SENT_SIGNED_OUT);
       else setStatus(accountOk ? "Done! Your tag should say “Profile saved”."
                                : "Sent to your tag, but saving to your account failed. Try again later.", accountOk ? "ok" : "err");
     } else {
