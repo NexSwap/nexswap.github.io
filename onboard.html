@@ -170,6 +170,7 @@
   .match .actions { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
   .match .actions .btn { min-height: 44px; padding: 0 14px; font-size: 15px; }
   .match.waiting { opacity: .75; }
+  .match .actions .btn-on { background: var(--accent); border: 1px solid var(--accent); color: var(--text); }   /* the Bae or Nay chosen */
   .empty { text-align: center; color: var(--dim); padding: 28px 12px; }
   .empty strong { display: block; color: var(--text); font-size: 17px; margin-bottom: 6px; }
 
@@ -467,7 +468,7 @@
         <p data-only="dating" hidden>Under the name: something you share, then your part of <strong>iceBaeker</strong>,
           a quick game for two, like the one above: one of you gives clues or picks, the other guesses or answers. Then
           tap <strong>Bae</strong> or <strong>Nay</strong> on your tag. It looks the same either way: you find out on
-          your phone after the event, and only a mutual Bae is ever shown.</p>
+          your phone a few days after the event, and only a mutual Bae is ever shown.</p>
       </div>
 
       <div class="howto-step" data-howto="4" hidden>
@@ -476,12 +477,14 @@
             <p class="name">Alex</p><p class="sub" data-them-role>Head of Sales · Demo Co</p><p class="why" data-sample-why>Selling · AI, Fintech</p>
             <div class="actions"><span class="btn btn-ghost">LinkedIn</span></div></div></li></ul>
           <ul class="match-list sample" data-only="dating" hidden><li class="match"><div class="initials">S</div><div>
-            <p class="name">Sam</p><p class="why" data-sample-why>Both: Slow &amp; steady · Running, Coffee</p><p class="sub">It's mutual! @sam.runs.sg</p></div></li></ul>
+            <p class="name">Sam</p><p class="why" data-sample-why>Both: Slow &amp; steady · Running, Coffee</p>
+            <div class="actions"><span class="btn btn-on">Bae</span><span class="btn btn-ghost">Nay</span></div></div></li></ul>
         </div>
         <h1>After the event</h1>
         <p data-only="business">Return your tag at the desk. Your <strong>Matches</strong> then show everyone you met, with their LinkedIn.</p>
         <p data-only="dating" hidden>Return your tag at the desk. <strong>Matches</strong> then shows everyone you
-          <strong>both tapped Bae</strong> on, with their handle.</p>
+          met, with the Bae or Nay you tapped: you have a few days to change any of them. After that it shows the people
+          you <strong>both said Bae</strong> to, with their handle.</p>
         <p id="howto-signin">Sign in with Google to keep them after the event.</p>
       </div>
     </section>
@@ -523,7 +526,7 @@
         <label class="field" data-only="dating" hidden><span>Instagram or Telegram (optional)</span>
           <input type="text" id="handle" maxlength="40" autocomplete="off" autocapitalize="none" spellcheck="false"
                  enterkeyhint="done" placeholder="@yourhandle">
-          <p class="hint">Only people you both tap Bae on see it, after the event. Never on your tag. Needs sign-in.</p></label>
+          <p class="hint">Only people you both say Bae to see it, a few days after the event. Never on your tag. Needs sign-in.</p></label>
       </fieldset>
 
       <fieldset class="step fade" data-step="2" hidden>
@@ -570,9 +573,11 @@
          other's first name.</p>
       <p>Signing in is optional. If you continue with Google, your first name, handle, hobbies, quick picks and what
          you're looking for<span data-hd hidden> (and your type)</span> are saved to your NexSwap account (Supabase,
-         Singapore region). When you return your tag, we copy who it matched and whether you tapped Bae or Nay. Who you
-         are and would like to meet is never saved. Your first name and handle are shown only to people you both tapped
-         Bae on; nobody is told about a Nay. Your dating profile and matches are deleted after 30 days, or any time
+         Singapore region). When you return your tag, we copy who it matched and whether you tapped Bae or Nay, and for
+         a few days after the event (the organiser sets how many) you can change any of them on the Matches page; we
+         save what you change it to. During those days the people you matched see your first name and what you have in common, but not your handle
+         or your choice. Who you are and would like to meet is never saved. After that, your first name and handle are
+         shown only to people you both said Bae to; nobody is told about a Nay. Your dating profile and matches are deleted after 30 days, or any time
          with the button below.</p>
       <p>Without signing in, nothing is saved to an account and you won't see your matches. This phone remembers your
          answers so you can send them again quickly. The organiser resets every tag after the event, which clears your

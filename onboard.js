@@ -88,9 +88,11 @@ const DEMO_CARDS = {
                   photoURL: "", interests: 0x0804, offer: 0x08, seek: 0x02 },
 };
 const DEMO_ROWS = [{ uid: "demo-alex" }, { uid: "demo-priya" }, { uid: "demo-waiting" }];
-// ?demo=1&e=d: dating sample people, both mutual Baes (Jo left no handle)
+// ?demo=1&e=d: dating sample people. Sam is still open to change (tapped Bae on the tag, 3 days left); Jo is a mutual
+// Bae whose window has closed (Jo left no handle)
 const DEMO_DATING_CARDS = {
-  "demo-alex":  { first: "Sam", why: "Both: Slow & steady · Running, Coffee", handle: "@sam.runs.sg" },
+  "demo-alex":  { first: "Sam", why: "Both: Slow & steady · Running, Coffee", open: true, vote: "bae",
+                  decideBy: new Date(Date.now() + 3 * 864e5).toISOString() },
   "demo-priya": { first: "Jo", why: "Projector meets Generator · Live music, Board games" },
 };
 const TAG_ID = /^[0-9A-Fa-f]{8}$/.test(params.get("tag") || "") ? params.get("tag").toUpperCase() : "";
@@ -118,7 +120,7 @@ if (DATING) {
   document.querySelectorAll(".tagmock.sign").forEach(el => el.classList.add("dating"));   // big name, one-line hint
   document.getElementById("howto-looking").textContent = "Hoping to meet";
   HD_TYPES.forEach((t, i) => document.getElementById("hd").append(new Option(`${t}: ${HD_BLURBS[i]}`, i)));
-  document.getElementById("matches-hint").textContent = "People you both tapped Bae on, after the event.";
+  document.getElementById("matches-hint").textContent = "After the event: a few days to change any Bae or Nay, then the people you both said Bae to.";
   document.querySelector("#signed-out .hint").textContent = "Sign in to see your mutual Baes after the event.";
 }
 
@@ -1040,6 +1042,45 @@ function el(tag, className, text) {
   return e;
 }
 
+// "Thu 23 Oct, 9:00 pm" in the phone's own time zone
+function whenText(t) {
+  return new Date(t).toLocaleString(undefined, { weekday: "short", day: "numeric", month: "short", hour: "numeric", minute: "2-digit" });
+}
+
+// A dating match still open to change: Bae and Nay, the current one filled in (the tag's tap until changed here), and
+// the deadline. A change saves straight away (decide_dating_match in schema.sql: only my side) and the list is redrawn.
+function datingChoice(card) {
+  const wrap = el("div");
+  const actions = el("div", "actions");
+  for (const [vote, label] of [["bae", "Bae"], ["nay", "Nay"]]) {
+    const b = el("button", card.vote === vote ? "btn btn-on" : "btn btn-ghost", label);
+    b.type = "button";
+    b.setAttribute("aria-pressed", card.vote === vote);
+    b.addEventListener("click", async () => {
+      if (card.vote === vote) return;
+      actions.querySelectorAll("button").forEach(x => x.disabled = true);
+      try {
+        if (DEMO) card.vote = vote;
+        else {
+          const { error } = await supabase.rpc("decide_dating_match", { p_match: card.matchId, p_vote: vote });
+          if (error) throw error;
+        }
+        setStatus("");
+        await renderMatches();
+      } catch (e) {
+        console.error(e);
+        actions.querySelectorAll("button").forEach(x => x.disabled = false);
+        setStatus(/decisions closed/.test(e.message || "") ? "Too late: the time to change it is over."
+                                                           : "Couldn't save that. Check your connection and try again.", "err");
+        if (/decisions closed/.test(e.message || "")) renderMatches().catch(console.error);
+      }
+    });
+    actions.append(b);
+  }
+  wrap.append(actions, el("p", "sub", `${card.vote ? "You can change it" : "Choose"} until ${whenText(card.decideBy)}.`));
+  return wrap;
+}
+
 async function renderMatches() {
   const list = document.getElementById("match-list");
   const hint = document.getElementById("matches-hint");
@@ -1049,13 +1090,20 @@ async function renderMatches() {
     pending = { size: DATING ? 0 : 1 };
     loadCard = async uid => (DATING ? DEMO_DATING_CARDS : DEMO_CARDS)[uid] || null;
   } else if (DATING) {
-    // Mutual Baes only, newest first, with their handle (my_dating_matches in schema.sql): a Nay, no tap and a tag not
-    // synced yet all look the same, nothing
-    const { data, error } = await supabase.rpc("my_dating_matches");
-    if (error) throw error;
-    const cards = new Map(data.map(r => [r.tag_id, { first: r.first, handle: r.handle,
-      interests: Number(r.interests), offer: r.offer, seek: r.seek }]));
-    rows = data.map(r => ({ uid: r.tag_id }));
+    // Two calls (schema.sql): the matches still open to change, each with my own Bae, Nay or nothing yet and its
+    // deadline, never their choice or handle (my_dating_choices), undecided ones first; then the mutual Baes whose window
+    // has closed, newest first, with their handle (my_dating_matches). A Nay, no tap and a tag not synced yet all look
+    // the same once it's closed: nothing.
+    const [open, done] = await Promise.all([supabase.rpc("my_dating_choices"), supabase.rpc("my_dating_matches")]);
+    if (open.error) throw open.error;
+    if (done.error) throw done.error;
+    const cards = new Map([
+      ...open.data.map(r => ["c" + r.match_id, { first: r.first, interests: Number(r.interests), offer: r.offer,
+        seek: r.seek, open: true, matchId: r.match_id, vote: r.vote, decideBy: r.decide_by }]),
+      ...done.data.map(r => [r.tag_id, { first: r.first, handle: r.handle,
+        interests: Number(r.interests), offer: r.offer, seek: r.seek }])]);
+    rows = [...open.data.filter(r => !r.vote), ...open.data.filter(r => r.vote)].map(r => ({ uid: "c" + r.match_id }))
+      .concat(done.data.map(r => ({ uid: r.tag_id })));
     pending = { size: 0 };
     loadCard = async key => cards.get(key) || null;
   } else {
@@ -1072,7 +1120,7 @@ async function renderMatches() {
   }
   list.replaceChildren();
 
-  let waiting = 0;
+  let waiting = 0, deadline = 0;   // the last deadline among the open dating matches
   for (const row of rows) {
     let card = null;
     try { card = await loadCard(row.uid); } catch (e) {}
@@ -1097,6 +1145,12 @@ async function renderMatches() {
     if (sub) body.append(el("p", "sub", sub));
     const why = card.why || matchReason(card);
     if (why) body.append(el("p", "why", why));
+    if (DATING && card.open) {
+      deadline = Math.max(deadline, Date.parse(card.decideBy));
+      body.append(datingChoice(card));
+      list.append(li);
+      continue;
+    }
     if (DATING) {
       body.append(el("p", "sub", card.handle ? `It's mutual! ${card.handle}` : "It's mutual!"));
       list.append(li);
@@ -1121,14 +1175,15 @@ async function renderMatches() {
     const empty = el("li", "empty");
     empty.append(el("strong", "", pending.size ? "Almost there" : DATING ? "No mutual Baes yet" : "No matches yet"),
                  document.createTextNode(!myTag ? "Send your profile to your tag first: tap its screen, then scan the QR code."
-                   : DATING ? "Tap Bae on the people you'd like to see again. Mutual Baes show here once both tags are back at the desk."
+                   : DATING ? "Tap Bae on the people you'd like to see again. After the event you get a few days here to change any Bae or Nay; then the people you both said Bae to show here."
                    : "Wear your tag at the event. Your matches appear here after you return your tag at the desk."));
     list.append(empty);
   }
   const notes = [];
   if (waiting) notes.push(`${waiting} waiting for the other person's tag to be returned.`);
   if (pending.size) notes.push(`${pending.size} matched with someone who hasn't set up their profile yet. They'll appear once they do.`);
-  hint.textContent = notes.join(" ") || (DATING ? "People you both tapped Bae on. Only they see your first name and handle."
+  if (deadline) notes.push(`Your Baes stay sealed until ${whenText(deadline)}. Then the people you both said Bae to show here, with their handle; nobody is told about a Nay.`);
+  hint.textContent = notes.join(" ") || (DATING ? "People you both said Bae to. Only they see your first name and handle."
                                                : "People your tag matched with. They see your details only if their tag matched you too.");
   const resolved = rows.length - waiting;
   const badge = document.getElementById("match-count");
