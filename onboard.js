@@ -209,6 +209,9 @@ function payload() {
 
 // Remember the form on this phone so a re-write is quick (a dating profile apart from the business one)
 let datingPhoto = "";   // dating: '' or the photo as a small JPEG data URL (makePhoto), kept with the form
+// Added or removed on this phone since it was last saved to the account. Only then is it sent: a phone that never had
+// it (another phone, another browser) loads it from the account instead of sending an empty one over it.
+let photoChanged = false;
 const FIELDS = ["first", "company", "title", "linkedin", "handle"];
 const FORM_KEY = DATING ? "nexswap-profile-d" : "nexswap-profile";
 const DATING_BOXES = ["iam", "open", "intent", "picks"];
@@ -222,6 +225,7 @@ function saveForm() {
       data.adult = document.getElementById("adult").checked;
       data.consent = document.getElementById("consent").checked;
       data.photo = datingPhoto;
+      data.photoChanged = photoChanged;
     }
     localStorage.setItem(FORM_KEY, JSON.stringify(data));
   } catch (e) {}
@@ -240,6 +244,7 @@ function loadForm() {
       document.getElementById("adult").checked = !!data.adult;
       document.getElementById("consent").checked = !!data.consent;
       datingPhoto = /^data:image\/jpeg;base64,/.test(data.photo || "") ? data.photo : "";
+      photoChanged = !!data.photoChanged;
       showPhoto();
     }
   } catch (e) {}
@@ -304,6 +309,7 @@ document.getElementById("photo-file").addEventListener("change", async e => {
   if (!file) return;
   try {
     datingPhoto = await makePhoto(file);
+    photoChanged = true;
     setStatus("");
   } catch (err) {
     console.error(err);
@@ -314,6 +320,7 @@ document.getElementById("photo-file").addEventListener("change", async e => {
 });
 document.getElementById("photo-remove").addEventListener("click", () => {
   datingPhoto = "";
+  photoChanged = true;
   showPhoto();
   saveForm();
 });
@@ -912,7 +919,10 @@ async function saveToAccount() {
     : await supabase.from("profiles").upsert({ id: user.id, ...p, share_email: shareContact.checked,
                                                last_active_at: now(), updated_at: now() });
   // the photo after the profile it belongs to ('' removes it: save_dating_photo in schema.sql)
-  if (DATING && !error) ({ error } = await supabase.rpc("save_dating_photo", { p_photo: datingPhoto }));
+  if (DATING && !error && photoChanged) {
+    ({ error } = await supabase.rpc("save_dating_photo", { p_photo: datingPhoto }));
+    if (!error) { photoChanged = false; saveForm(); }
+  }
   if (error) console.error(error);
   return !error;
 }
@@ -993,6 +1003,16 @@ async function showUser(u) {
   }
   document.getElementById("who").textContent = u.email || userName(u) || "your Google account";
   showAvatar();
+  // Dating: your own photo from the account (my_dating_photo in schema.sql), unless it was changed here and not saved yet
+  if (DATING && !photoChanged) {
+    const { data, error } = await supabase.rpc("my_dating_photo");
+    if (error) console.error(error);
+    else if (typeof data === "string" && (data === "" || /^data:image\/jpeg;base64,/.test(data))) {
+      datingPhoto = data;
+      showPhoto();
+      saveForm();
+    }
+  }
   try {
     // (dating: no business profile to load; the dating form is on this phone and goes to the account on Send)
     const { data, error } = DATING ? {} : await supabase.from("profiles").select("*").eq("id", u.id).maybeSingle();
