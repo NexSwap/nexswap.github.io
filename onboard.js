@@ -120,7 +120,7 @@ if (DATING) {
   document.querySelectorAll(".tagmock.sign").forEach(el => el.classList.add("dating"));   // big name, one-line hint
   document.getElementById("howto-looking").textContent = "Hoping to meet";
   HD_TYPES.forEach((t, i) => document.getElementById("hd").append(new Option(`${t}: ${HD_BLURBS[i]}`, i)));
-  document.getElementById("matches-hint").textContent = "After the event: a few days to change any Bae or Nay, then the people you both said Bae to.";
+  document.getElementById("matches-hint").textContent = "After the event: time to change any Bae or Nay, then the people you both said Bae to.";
   document.querySelector("#signed-out .hint").textContent = "Sign in to see your mutual Baes after the event.";
 }
 
@@ -1081,6 +1081,10 @@ function datingChoice(card) {
   return wrap;
 }
 
+// While the page is open, the list is drawn again just after the first deadline passes, so mutual Baes appear without
+// a reload (a window can be a few minutes)
+let revealTimer;
+
 async function renderMatches() {
   const list = document.getElementById("match-list");
   const hint = document.getElementById("matches-hint");
@@ -1120,7 +1124,7 @@ async function renderMatches() {
   }
   list.replaceChildren();
 
-  let waiting = 0, deadline = 0;   // the last deadline among the open dating matches
+  let waiting = 0, deadline = 0, soonest = Infinity;   // the last and first deadlines among the open dating matches
   for (const row of rows) {
     let card = null;
     try { card = await loadCard(row.uid); } catch (e) {}
@@ -1147,6 +1151,7 @@ async function renderMatches() {
     if (why) body.append(el("p", "why", why));
     if (DATING && card.open) {
       deadline = Math.max(deadline, Date.parse(card.decideBy));
+      soonest = Math.min(soonest, Date.parse(card.decideBy));
       body.append(datingChoice(card));
       list.append(li);
       continue;
@@ -1175,13 +1180,16 @@ async function renderMatches() {
     const empty = el("li", "empty");
     empty.append(el("strong", "", pending.size ? "Almost there" : DATING ? "No mutual Baes yet" : "No matches yet"),
                  document.createTextNode(!myTag ? "Send your profile to your tag first: tap its screen, then scan the QR code."
-                   : DATING ? "Tap Bae on the people you'd like to see again. After the event you get a few days here to change any Bae or Nay; then the people you both said Bae to show here."
+                   : DATING ? "Tap Bae on the people you'd like to see again. After the event you get some time here to change any Bae or Nay; then the people you both said Bae to show here."
                    : "Wear your tag at the event. Your matches appear here after you return your tag at the desk."));
     list.append(empty);
   }
   const notes = [];
   if (waiting) notes.push(`${waiting} waiting for the other person's tag to be returned.`);
   if (pending.size) notes.push(`${pending.size} matched with someone who hasn't set up their profile yet. They'll appear once they do.`);
+  clearTimeout(revealTimer);
+  if (soonest < Infinity && !DEMO) revealTimer = setTimeout(() => renderMatches().catch(console.error),
+                                                            Math.max(0, soonest - Date.now()) + 2000);
   if (deadline) notes.push(`Your Baes stay sealed until ${whenText(deadline)}. Then the people you both said Bae to show here, with their handle; nobody is told about a Nay.`);
   hint.textContent = notes.join(" ") || (DATING ? "People you both said Bae to. Only they see your first name and handle."
                                                : "People your tag matched with. They see your details only if their tag matched you too.");
