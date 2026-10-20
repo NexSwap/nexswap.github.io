@@ -208,6 +208,7 @@ function payload() {
 }
 
 // Remember the form on this phone so a re-write is quick (a dating profile apart from the business one)
+let datingPhoto = "";   // dating: '' or the photo as a small JPEG data URL (makePhoto), kept with the form
 const FIELDS = ["first", "company", "title", "linkedin", "handle"];
 const FORM_KEY = DATING ? "nexswap-profile-d" : "nexswap-profile";
 const DATING_BOXES = ["iam", "open", "intent", "picks"];
@@ -220,6 +221,7 @@ function saveForm() {
       data.hd = Number(document.getElementById("hd").value);
       data.adult = document.getElementById("adult").checked;
       data.consent = document.getElementById("consent").checked;
+      data.photo = datingPhoto;
     }
     localStorage.setItem(FORM_KEY, JSON.stringify(data));
   } catch (e) {}
@@ -237,11 +239,85 @@ function loadForm() {
       document.getElementById("hd").value = String(data.hd ?? -1);
       document.getElementById("adult").checked = !!data.adult;
       document.getElementById("consent").checked = !!data.consent;
+      datingPhoto = /^data:image\/jpeg;base64,/.test(data.photo || "") ? data.photo : "";
+      showPhoto();
     }
   } catch (e) {}
 }
 loadForm();
 document.getElementById("form").addEventListener("change", saveForm);
+
+// ---------- dating photo (optional) ----------
+// Made here, before it's saved: the middle square of the picture, 320 x 320, as a JPEG small enough for the account
+// (at most 100,000 characters, dating.profiles in schema.sql). Drawing it again drops its location and camera details.
+// Read as a data URL rather than a blob: link, which the page's content policy doesn't allow.
+function makePhoto(file) {
+  return new Promise((ok, fail) => {
+    const reader = new FileReader();
+    reader.onerror = () => fail(new Error("couldn't read the file"));
+    reader.onload = () => {
+      const img = new Image();
+      img.onerror = () => fail(new Error("not a picture this phone can open"));
+      img.onload = () => {
+        const side = Math.min(img.naturalWidth, img.naturalHeight), size = 320;
+        const canvas = document.createElement("canvas");
+        canvas.width = canvas.height = size;
+        canvas.getContext("2d").drawImage(img, (img.naturalWidth - side) / 2, (img.naturalHeight - side) / 2, side, side,
+                                          0, 0, size, size);
+        for (const quality of [0.82, 0.7, 0.55, 0.4]) {
+          const url = canvas.toDataURL("image/jpeg", quality);
+          if (url.startsWith("data:image/jpeg;base64,") && url.length <= 95000) return ok(url);
+        }
+        fail(new Error("too big"));
+      };
+      img.src = reader.result;
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
+// The header's picture while signed in: at a dating event the photo added here (what matches see once it's saved),
+// otherwise Google's
+function showAvatar() {
+  const avatar = document.getElementById("avatar");
+  const src = !user ? "" : DATING && datingPhoto ? datingPhoto : userPhoto(user);
+  avatar.hidden = !src;
+  if (src) avatar.src = src;
+}
+
+// The form's preview: the photo, or the first letter of the name
+function showPhoto() {
+  showAvatar();
+  const preview = document.getElementById("photo-preview");
+  if (datingPhoto) {
+    const img = document.createElement("img");
+    img.src = datingPhoto; img.alt = "";
+    preview.replaceChildren(img);
+  } else preview.textContent = (document.getElementById("first").value || "?").slice(0, 1).toUpperCase();
+  document.getElementById("photo-remove").hidden = !datingPhoto;
+  document.getElementById("photo-pick").firstChild.textContent = datingPhoto ? "Change photo" : "Add a photo";
+}
+
+document.getElementById("photo-file").addEventListener("change", async e => {
+  const file = e.target.files[0];
+  e.target.value = "";                         // the same file can be picked again
+  if (!file) return;
+  try {
+    datingPhoto = await makePhoto(file);
+    setStatus("");
+  } catch (err) {
+    console.error(err);
+    setStatus("Couldn't use that picture. Try another one (a JPEG or PNG works).", "err");
+  }
+  showPhoto();
+  saveForm();
+});
+document.getElementById("photo-remove").addEventListener("click", () => {
+  datingPhoto = "";
+  showPhoto();
+  saveForm();
+});
+document.getElementById("first").addEventListener("input", () => { if (!datingPhoto) showPhoto(); });
 
 // The most choices a profile may have (Taxonomy.h MAX_INTERESTS / MAX_GOALS, sim/regress.py checks they agree): a tag
 // refuses more, and other tags ignore a tag with more, so nobody matches everyone by ticking everything. The other
@@ -830,11 +906,13 @@ function fillForm(p) {
 async function saveToAccount() {
   if (!user) return true;
   const p = formProfile();
-  const { error } = DATING
+  let { error } = DATING
     ? await supabase.rpc("save_dating_profile", { p_first: p.first, p_handle: p.handle, p_interests: p.interests,
                                                   p_offer: p.offer, p_seek: p.seek })
     : await supabase.from("profiles").upsert({ id: user.id, ...p, share_email: shareContact.checked,
                                                last_active_at: now(), updated_at: now() });
+  // the photo after the profile it belongs to ('' removes it: save_dating_photo in schema.sql)
+  if (DATING && !error) ({ error } = await supabase.rpc("save_dating_photo", { p_photo: datingPhoto }));
   if (error) console.error(error);
   return !error;
 }
@@ -914,9 +992,7 @@ async function showUser(u) {
     return;
   }
   document.getElementById("who").textContent = u.email || userName(u) || "your Google account";
-  const avatar = document.getElementById("avatar");
-  avatar.hidden = !userPhoto(u);
-  if (userPhoto(u)) avatar.src = userPhoto(u);
+  showAvatar();
   try {
     // (dating: no business profile to load; the dating form is on this phone and goes to the account on Send)
     const { data, error } = DATING ? {} : await supabase.from("profiles").select("*").eq("id", u.id).maybeSingle();
@@ -1093,19 +1169,31 @@ async function renderMatches() {
     rows = DATING ? DEMO_ROWS.slice(0, 2) : DEMO_ROWS;
     pending = { size: DATING ? 0 : 1 };
     loadCard = async uid => (DATING ? DEMO_DATING_CARDS : DEMO_CARDS)[uid] || null;
+    if (DATING && !DEMO_DATING_CARDS["demo-alex"].photoURL) {   // Sam's sample photo: a drawn gradient, not a person
+      const c = document.createElement("canvas"), g = c.getContext("2d");
+      c.width = c.height = 96;
+      const fill = g.createLinearGradient(0, 0, 96, 96);
+      fill.addColorStop(0, "#f2994a"); fill.addColorStop(1, "#862eaf");
+      g.fillStyle = fill; g.fillRect(0, 0, 96, 96);
+      DEMO_DATING_CARDS["demo-alex"].photoURL = c.toDataURL("image/jpeg", 0.8);
+    }
   } else if (DATING) {
     // Two calls (schema.sql): the matches still open to change, each with my own Bae, Nay or nothing yet and its
     // deadline, never their choice or handle (my_dating_choices), undecided ones first; then the mutual Baes whose window
     // has closed, newest first, with their handle (my_dating_matches). A Nay, no tap and a tag not synced yet all look
     // the same once it's closed: nothing.
-    const [open, done] = await Promise.all([supabase.rpc("my_dating_choices"), supabase.rpc("my_dating_matches")]);
+    // and their photos, if they added one, for the same people (my_dating_photos)
+    const [open, done, photos] = await Promise.all([supabase.rpc("my_dating_choices"), supabase.rpc("my_dating_matches"),
+                                                    supabase.rpc("my_dating_photos")]);
     if (open.error) throw open.error;
     if (done.error) throw done.error;
+    if (photos.error) console.error(photos.error);   // (no photos is no reason to show no matches)
+    const photo = new Map((photos.data || []).map(r => [r.match_id ? "c" + r.match_id : r.tag_id, r.photo]));
     const cards = new Map([
       ...open.data.map(r => ["c" + r.match_id, { first: r.first, interests: Number(r.interests), offer: r.offer,
-        seek: r.seek, open: true, matchId: r.match_id, vote: r.vote, decideBy: r.decide_by }]),
+        seek: r.seek, open: true, matchId: r.match_id, vote: r.vote, decideBy: r.decide_by, photoURL: photo.get("c" + r.match_id) }]),
       ...done.data.map(r => [r.tag_id, { first: r.first, handle: r.handle,
-        interests: Number(r.interests), offer: r.offer, seek: r.seek }])]);
+        interests: Number(r.interests), offer: r.offer, seek: r.seek, photoURL: photo.get(r.tag_id) }])]);
     rows = [...open.data.filter(r => !r.vote), ...open.data.filter(r => r.vote)].map(r => ({ uid: "c" + r.match_id }))
       .concat(done.data.map(r => ({ uid: r.tag_id })));
     pending = { size: 0 };
@@ -1130,7 +1218,7 @@ async function renderMatches() {
     try { card = await loadCard(row.uid); } catch (e) {}
     const li = el("li", card ? "match fade" : "match waiting fade");
     const face = el("div", "initials", card ? (card.first || "?").slice(0, 1).toUpperCase() : "…");
-    if (card && /^https:\/\//.test(card.photoURL || "")) {
+    if (card && /^(https:\/\/|data:image\/jpeg;base64,)/.test(card.photoURL || "")) {   // Google's, or a dating photo
       const img = document.createElement("img");
       img.src = card.photoURL; img.alt = ""; img.referrerPolicy = "no-referrer";
       face.replaceChildren(img);

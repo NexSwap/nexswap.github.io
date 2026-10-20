@@ -109,8 +109,11 @@
   .dots i.on { background: var(--accent-hi); width: 22px; }
   fieldset { border: 0; margin: 0; padding: 0; min-width: 0; }
   legend { font-size: 20px; font-weight: 700; padding: 0; margin: 0 0 4px; }
-  label.field { display: block; margin: 16px 0 0; }
-  label.field > span { display: block; font-size: 15px; font-weight: 600; margin-bottom: 6px; }
+  label.field, div.field { display: block; margin: 16px 0 0; }
+  label.field > span, div.field > span { display: block; font-size: 15px; font-weight: 600; margin-bottom: 6px; }
+  /* The dating photo: a round preview, then Add / Change and Remove */
+  .photo-row { display: flex; align-items: center; gap: 12px; }
+  .photo-row .initials { width: 56px; height: 56px; flex: 0 0 56px; }
   input[type=text], input[type=url] {
     width: 100%; min-height: var(--tap); padding: 12px 14px; border-radius: 12px; border: 1px solid var(--border);
     background: var(--surface); color: var(--text); font-size: 16px;   /* 16px stops iOS zooming on focus */
@@ -527,6 +530,12 @@
           <input type="text" id="handle" maxlength="40" autocomplete="off" autocapitalize="none" spellcheck="false"
                  enterkeyhint="done" placeholder="@yourhandle">
           <p class="hint">Only people you both say Bae to see it, after the event. Never on your tag. Needs sign-in.</p></label>
+        <div class="field" data-only="dating" hidden><span>Photo (optional)</span>
+          <div class="photo-row"><div class="initials" id="photo-preview" aria-hidden="true">?</div>
+            <label class="btn btn-ghost" id="photo-pick">Add a photo<input type="file" id="photo-file" accept="image/*" hidden></label>
+            <button type="button" class="btn btn-link" id="photo-remove" hidden>Remove</button></div>
+          <p class="hint" id="photo-hint">The people you match with see it while they choose Bae or Nay, and your mutual Baes
+            after that. Never on your tag. Needs sign-in.</p></div>
       </fieldset>
 
       <fieldset class="step fade" data-step="2" hidden>
@@ -575,9 +584,10 @@
          you're looking for<span data-hd hidden> (and your type)</span> are saved to your NexSwap account (Supabase,
          Singapore region). When you return your tag, we copy who it matched and whether you tapped Bae or Nay, and for
          a while after the event (the organiser sets how long, from minutes to two weeks) you can change any of them on the Matches page; we
-         save what you change it to. During those days the people you matched see your first name and what you have in common, but not your handle
-         or your choice. Who you are and would like to meet is never saved. After that, your first name and handle are
-         shown only to people you both said Bae to; nobody is told about a Nay. Your dating profile and matches are deleted after 30 days, or any time
+         save what you change it to. During that time the people you matched see your first name, your photo if you added one
+         and what you have in common, but not your handle or your choice. Who you are and would like to meet is never saved. After that, your first name and handle are
+         shown only to people you both said Bae to (and your photo too); nobody is told about a Nay. A photo is made smaller
+         on your phone before it's saved, which also removes its location and camera details. Your dating profile and matches are deleted after 30 days, or any time
          with the button below.</p>
       <p>Without signing in, nothing is saved to an account and you won't see your matches. This phone remembers your
          answers so you can send them again quickly. The organiser resets every tag after the event, which clears your
