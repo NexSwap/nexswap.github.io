@@ -88,13 +88,7 @@ const DEMO_CARDS = {
                   photoURL: "", interests: 0x0804, offer: 0x08, seek: 0x02 },
 };
 const DEMO_ROWS = [{ uid: "demo-alex" }, { uid: "demo-priya" }, { uid: "demo-waiting" }];
-// ?demo=1&e=d: dating sample people. Sam is still open to change (tapped Bae on the tag, 3 days left); Jo is a mutual
-// Bae whose window has closed (Jo left no handle)
-const DEMO_DATING_CARDS = {
-  "demo-alex":  { first: "Sam", why: "Both: Slow & steady · Running, Coffee", open: true, vote: "bae",
-                  decideBy: new Date(Date.now() + 3 * 864e5).toISOString() },
-  "demo-priya": { first: "Jo", why: "Projector meets Generator · Live music, Board games" },
-};
+// ?demo=1&e=d: dating sample people, demoDating() below
 const TAG_ID = /^[0-9A-Fa-f]{8}$/.test(params.get("tag") || "") ? params.get("tag").toUpperCase() : "";
 const SETUP_CODE = /^[0-9A-Fa-f]{6}$/.test(params.get("k") || "") ? params.get("k").toUpperCase() : "";
 // A dating event: the tag's QR adds &e=d (its event type, set from the organiser's console). The dating form, a v2
@@ -300,10 +294,11 @@ function showPhoto() {
     preview.replaceChildren(img);
   } else preview.textContent = (document.getElementById("first").value || "?").slice(0, 1).toUpperCase();
   document.getElementById("photo-remove").hidden = !datingPhoto;
-  document.getElementById("photo-pick").firstChild.textContent = datingPhoto ? "Change photo" : "Add a photo";
 }
 
-document.getElementById("photo-file").addEventListener("change", async e => {
+// The camera button only where there's a phone camera to open (a computer would show a file chooser for both)
+document.getElementById("photo-take").hidden = !matchMedia("(pointer: coarse)").matches;
+const usePhoto = async e => {
   const file = e.target.files[0];
   e.target.value = "";                         // the same file can be picked again
   if (!file) return;
@@ -317,7 +312,9 @@ document.getElementById("photo-file").addEventListener("change", async e => {
   }
   showPhoto();
   saveForm();
-});
+};
+document.getElementById("photo-camera").addEventListener("change", usePhoto);
+document.getElementById("photo-file").addEventListener("change", usePhoto);
 document.getElementById("photo-remove").addEventListener("click", () => {
   datingPhoto = "";
   photoChanged = true;
@@ -612,7 +609,10 @@ function updateInterestCount() {
 document.getElementById("interests").addEventListener("change", updateInterestCount);
 
 document.getElementById("tab-profile").addEventListener("click", () => { activeTab = "profile"; render(); });
-document.getElementById("tab-matches").addEventListener("click", () => { activeTab = "matches"; render(); });
+document.getElementById("tab-matches").addEventListener("click", () => {
+  activeTab = "matches"; render();
+  if (DATING && dating.done.length) showReveals(dating.done);   // (a mutual Bae not revealed on this phone yet)
+});
 document.getElementById("edit").addEventListener("click", () => { mode = "wizard"; step = 1; render(); window.scrollTo(0, 0); });
 document.getElementById("howto-open").addEventListener("click", openHowto);
 document.getElementById("howto-skip").addEventListener("click", finishHowto);
@@ -1112,13 +1112,7 @@ async function sendToTag() {
 function matchReason(card) {
   const me = formProfile();
   if (DATING) {
-    let goal = "";
-    const same = [0, 1, 2].find(i => me.seek & card.offer & (1 << i));
-    const mine = hdType(me.offer), theirs = hdType(card.offer), types = 0xFF << DATING_INTENTS;
-    if (same !== undefined) goal = `Both: ${DATING_GOALS[same]}`;
-    else if (mine >= 0 && theirs >= 0 && ((me.seek & card.offer) | (me.offer & card.seek)) & types)
-      goal = `${HD_TYPES[theirs]} meets ${HD_TYPES[mine]}`;
-    const hobbies = sharedLabels(me.interests & card.interests).slice(0, 3);
+    const { goal, hobbies } = datingWhy(card);
     return [goal, hobbies.join(", ")].filter(Boolean).join(" · ");
   }
   const parts = [];
@@ -1143,81 +1137,513 @@ function whenText(t) {
   return new Date(t).toLocaleString(undefined, { weekday: "short", day: "numeric", month: "short", hour: "numeric", minute: "2-digit" });
 }
 
-// A dating match still open to change: Bae and Nay, the current one filled in (the tag's tap until changed here), and
-// the deadline. A change saves straight away (decide_dating_match in schema.sql: only my side) and the list is redrawn.
-function datingChoice(card) {
-  const wrap = el("div");
-  const actions = el("div", "actions");
-  for (const [vote, label] of [["bae", "Bae"], ["nay", "Nay"]]) {
-    const b = el("button", card.vote === vote ? "btn btn-on" : "btn btn-ghost", label);
-    b.type = "button";
-    b.setAttribute("aria-pressed", card.vote === vote);
-    b.addEventListener("click", async () => {
-      if (card.vote === vote) return;
-      actions.querySelectorAll("button").forEach(x => x.disabled = true);
-      try {
-        if (DEMO) card.vote = vote;
-        else {
-          const { error } = await supabase.rpc("decide_dating_match", { p_match: card.matchId, p_vote: vote });
-          if (error) throw error;
-        }
-        setStatus("");
-        await renderMatches();
-      } catch (e) {
-        console.error(e);
-        actions.querySelectorAll("button").forEach(x => x.disabled = false);
-        setStatus(/decisions closed/.test(e.message || "") ? "Too late: the time to change it is over."
-                                                           : "Couldn't save that. Check your connection and try again.", "err");
-        if (/decisions closed/.test(e.message || "")) renderMatches().catch(console.error);
-      }
-    });
-    actions.append(b);
-  }
-  wrap.append(actions, el("p", "sub", `${card.vote ? "You can change it" : "Choose"} until ${whenText(card.decideBy)}.`));
-  return wrap;
+// ---------- dating matches: swipe, your choices, the reveal ----------
+// While the window is open (my_dating_choices): the ones still to decide (no tap on the tag, or brought back with
+// rewind) are a stack to swipe, right Bae and left Nay, or with the buttons; everyone decided is in "Your choices", where
+// a tap switches Bae and Nay until the deadline. Nobody sees anyone's choice. After it (my_dating_matches): each mutual
+// Bae gets a full-screen reveal once on this phone, then a photo card with their handle to copy.
+let dating = { open: [], done: [] };   // the cards from the last load
+let datingRewound = new Set();          // match IDs brought back to the stack this visit
+let datingSwiped = [];                  // match IDs swiped this visit, newest last (for rewind)
+let revealTimer, countdownTimer;
+const REVEALED = "nexswap-revealed";    // the mutual Baes already revealed on this phone
+
+// Their goal line and shared hobbies, as matchReason words them (the first three, or all for the profile)
+function datingWhy(card, all = false) {
+  if (card.goal !== undefined) return { goal: card.goal, hobbies: card.hobbies || [] };   // (demo cards)
+  const me = formProfile();
+  let goal = "";
+  const same = [0, 1, 2].find(i => me.seek & card.offer & (1 << i));
+  const mine = hdType(me.offer), theirs = hdType(card.offer), types = 0xFF << DATING_INTENTS;
+  if (same !== undefined) goal = `Both: ${DATING_GOALS[same]}`;
+  else if (mine >= 0 && theirs >= 0 && ((me.seek & card.offer) | (me.offer & card.seek)) & types)
+    goal = `${HD_TYPES[theirs]} meets ${HD_TYPES[mine]}`;
+  const hobbies = sharedLabels(me.interests & card.interests);
+  return { goal, hobbies: all ? hobbies : hobbies.slice(0, 3) };
 }
 
-// While the page is open, the list is drawn again just after the first deadline passes, so mutual Baes appear without
-// a reload (a window can be a few minutes)
-let revealTimer;
+// "2 days 4 h left", "3 h 20 min left", "45 min left", "closing soon"
+function leftText(until) {
+  const m = Math.max(0, Math.round((Date.parse(until) - Date.now()) / 6e4));
+  if (m >= 1440) { const d = Math.floor(m / 1440), h = Math.floor(m % 1440 / 60);
+                   return `${d} day${d === 1 ? "" : "s"}${h ? ` ${h} h` : ""} left`; }
+  if (m >= 60) return `${Math.floor(m / 60)} h${m % 60 ? ` ${m % 60} min` : ""} left`;
+  return m >= 5 ? `${m} min left` : "closing soon";
+}
 
-async function renderMatches() {
+function icon(id) {
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  svg.setAttribute("aria-hidden", "true");
+  const use = document.createElementNS("http://www.w3.org/2000/svg", "use");
+  use.setAttribute("href", `#${id}`);
+  svg.append(use);
+  return svg;
+}
+
+// Their photo, or a gradient in one of the tag's glow colours (the same one for the same person) with their initial
+function photoOrInitial(box, card, initialClass) {
+  if (/^data:image\/jpeg;base64,/.test(card.photoURL || "")) {
+    const img = document.createElement("img");
+    img.src = card.photoURL; img.alt = "";
+    box.append(img);
+  } else {
+    let h = 0;
+    for (const ch of String(card.matchId || card.tagId || card.first)) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+    box.style.background = `linear-gradient(140deg, ${GLOW[h % GLOW.length]}, #2a1438)`;
+    box.append(el("span", initialClass, (card.first || "?").slice(0, 1).toUpperCase()));
+  }
+}
+
+// A mutual Bae's whole dating profile (my_dating_matches sends their interests and goals): what they're looking for,
+// their Human Design type if they gave one, their quick picks and hobbies, each marked when you share it
+function datingProfileOf(card) {
+  if (card.theirs) return card.theirs;   // (demo cards)
+  const me = formProfile(), has = (mask, i) => ((mask >>> i) & 1) === 1;
+  const out = { looking: [], type: "", picks: [], hobbies: [] };
+  for (let i = 0; i < DATING_INTENTS; i++)
+    if (has(card.offer, i)) out.looking.push({ label: DATING_GOALS[i], both: has(me.offer, i) });
+  const t = hdType(card.offer);
+  if (t >= 0) out.type = HD_TYPES[t];
+  for (let i = 0; i < 32; i++)
+    if (DATING_INTERESTS[i] && has(card.interests, i))
+      (i >= DATING_PICK_FIRST ? out.picks : out.hobbies).push({ label: DATING_INTERESTS[i], both: has(me.interests, i) });
+  return out;
+}
+
+// Chips with the shared ones filled in
+function markedChips(items) {
+  const chips = el("div", "d-chips marked");
+  items.forEach(x => chips.append(el("span", x.both ? "both" : "", x.label)));
+  return chips;
+}
+
+function chipsFor(hobbies) {
+  const chips = el("div", "d-chips");
+  hobbies.forEach(x => chips.append(el("span", "", x)));
+  return chips;
+}
+
+// Save one choice (decide_dating_match: only my side, only before the deadline); the page shows it at once and puts it
+// back if the save fails
+async function setDatingVote(card, vote) {
+  const before = card.vote;
+  card.vote = vote;
+  datingRewound.delete(card.matchId);
+  drawDating();
+  if (DEMO) return;
+  const { error } = await supabase.rpc("decide_dating_match", { p_match: card.matchId, p_vote: vote });
+  if (!error) return setStatus("");
+  console.error(error);
+  card.vote = before;
+  if (/decisions closed/.test(error.message || "")) {
+    setStatus("Too late: the time to change it is over.", "err");
+    renderMatches().catch(console.error);
+  } else {
+    setStatus("Couldn't save that. Check your connection and try again.", "err");
+    drawDating();
+  }
+}
+
+function swipeCard(card, depth) {
+  const c = el("article", "d-card" + (depth === 1 ? " behind" : depth === 2 ? " behind2" : ""));
+  const photo = el("div", "d-photo");
+  photoOrInitial(photo, card, "d-initial");
+  const pill = el("span", "d-pill", `⏱ ${leftText(card.decideBy)}`);
+  pill.dataset.until = card.decideBy;
+  pill.classList.toggle("soon", Date.parse(card.decideBy) - Date.now() < 36e5);
+  photo.append(pill, el("span", "d-stamp bae", "BAE"), el("span", "d-stamp nay", "NAY"), el("span", "d-name", card.first));
+  const { goal, hobbies } = datingWhy(card);
+  const body = el("div", "d-body");
+  body.append(el("p", "d-goal", goal), chipsFor(hobbies));
+  c.append(photo, body);
+  return c;
+}
+
+// A swipe: the card flies off (unless the phone asks for less motion), then the choice is saved
+function swipeMatch(card, vote, node) {
+  datingSwiped.push(card.matchId);
+  if (node && !reduceMotion()) {
+    node.classList.add("going");
+    node.style.transform = `translateX(${vote === "bae" ? 520 : -520}px) rotate(${vote === "bae" ? 24 : -24}deg)`;
+    node.style.opacity = "0";
+    setTimeout(() => setDatingVote(card, vote), 260);
+  } else setDatingVote(card, vote);
+}
+
+const buzz = () => { try { navigator.vibrate?.(12); } catch (e) {} };
+
+// Dragging the top card: it counts past 110 px, or on a quick flick (faster than 0.6 px/ms at the end); a light buzz
+// (phones that can) the moment it counts; shorter, slower drags spring back
+function dragCard(node, card) {
+  let x0 = null, dx = 0, last = [], over = false;
+  const stamps = { bae: node.querySelector(".d-stamp.bae"), nay: node.querySelector(".d-stamp.nay") };
+  node.addEventListener("pointerdown", e => {
+    x0 = e.clientX; dx = 0; last = [[e.timeStamp, e.clientX]]; over = false;
+    node.classList.remove("back");
+    node.setPointerCapture(e.pointerId);
+  });
+  node.addEventListener("pointermove", e => {
+    if (x0 === null) return;
+    dx = e.clientX - x0;
+    last.push([e.timeStamp, e.clientX]);
+    if (last.length > 5) last.shift();
+    node.style.transform = `translateX(${dx}px) rotate(${Math.max(-18, Math.min(18, dx / 16))}deg)`;
+    stamps.bae.style.opacity = Math.max(0, Math.min(1, dx / 110));
+    stamps.nay.style.opacity = Math.max(0, Math.min(1, -dx / 110));
+    const now = Math.abs(dx) > 110;
+    if (now && !over) { buzz(); (dx > 0 ? stamps.bae : stamps.nay).classList.add("hit"); }
+    if (!now) Object.values(stamps).forEach(s => s.classList.remove("hit"));
+    over = now;
+  });
+  const end = e => {
+    if (x0 === null) return;
+    x0 = null;
+    const [t0, xA] = last[0], v = (e.clientX - xA) / Math.max(1, e.timeStamp - t0);
+    const flick = Math.abs(v) > 0.6 && Math.abs(dx) > 30;
+    if (Math.abs(dx) < 6 && e.timeStamp - last[0][0] < 500 && last.length < 5) {   // a tap, not a drag
+      node.style.transform = "";
+      return openProfile(card, false);
+    }
+    if (Math.abs(dx) > 110 || flick) {
+      if (flick && !over) buzz();
+      swipeMatch(card, (flick ? v : dx) > 0 ? "bae" : "nay", node);
+    } else {
+      node.classList.add("back");
+      node.style.transform = "";
+      stamps.bae.style.opacity = stamps.nay.style.opacity = 0;
+    }
+  };
+  node.addEventListener("pointerup", end);
+  node.addEventListener("pointercancel", end);
+}
+
+function roundButton(cls, iconId, label, onClick) {
+  const b = el("button", `d-round ${cls}`);
+  b.type = "button";
+  b.setAttribute("aria-label", label);
+  b.title = label;
+  b.append(icon(iconId));
+  b.addEventListener("click", onClick);
+  return b;
+}
+
+function copyHandle(handle) {
+  const b = el("button", "d-handle");
+  b.type = "button";
+  const hint = el("small", "", "Tap to copy");
+  b.append(el("span", "", handle), hint);
+  b.addEventListener("click", async () => {
+    try { await navigator.clipboard.writeText(handle); hint.textContent = "Copied"; }
+    catch (e) { hint.textContent = "Couldn't copy"; }
+    setTimeout(() => { hint.textContent = "Tap to copy"; }, 1600);
+  });
+  return b;
+}
+
+function seenKey(card) { return `${card.tagId}|${card.savedAt}`; }
+function seenReveals() {
+  try { return new Set(JSON.parse(localStorage.getItem(REVEALED) || "[]")); } catch (e) { return new Set(); }
+}
+
+// One full-screen moment per mutual Bae not yet revealed on this phone, one after the other
+function showReveals(cards) {
+  document.querySelector(".d-reveal")?.remove();
+  const seen = seenReveals();
+  const todo = cards.filter(c => !seen.has(seenKey(c)));
+  let i = 0;
+  const one = () => {
+    document.querySelector(".d-reveal")?.remove();
+    if (i >= todo.length) return;
+    const card = todo[i];
+    seen.add(seenKey(card));
+    try { localStorage.setItem(REVEALED, JSON.stringify([...seen].slice(-300))); } catch (e) {}
+    const r = el("div", "d-reveal");
+    r.setAttribute("role", "dialog");
+    r.setAttribute("aria-label", `It's a match with ${card.first}`);
+    const face = el("div", "face");
+    photoOrInitial(face, card, "");
+    if (todo.length > 1) r.append(el("span", "count", `${i + 1} of ${todo.length}`));
+    r.append(el("p", "kicker", "Mutual Bae"), el("h2", "", "It's a match!"), face, el("p", "rname", card.first));
+    const { goal } = datingWhy(card);
+    if (goal) r.append(el("p", "rwhy", goal));
+    for (let h = 0; h < 7; h++) {
+      const heart = icon("fa-bae");
+      heart.classList.add("heart");
+      Object.assign(heart.style, { left: `${12 + h * 12}%`, top: `${48 + (h % 3) * 8}%`, color: GLOW[[6, 2, 0][h % 3]],
+                                   animationDelay: `${0.15 * h}s` });
+      r.append(heart);
+    }
+    if (card.handle) r.append(copyHandle(card.handle));
+    const next = el("button", "next", i + 1 < todo.length ? "Next match" : "See all");
+    next.type = "button";
+    next.addEventListener("click", () => { i++; one(); });
+    r.append(next);
+    document.body.append(r);
+    next.focus();
+  };
+  one();
+}
+
+// A match's profile, full screen, from a tap on them anywhere on the Matches page: their photo, what you share, and Bae
+// or Nay while it can still change (saved like a swipe), or their handle after the deadline. Only what you have in
+// common, as the privacy text says. The back arrow, Escape or the phone's Back closes it.
+function closeProfile(fromBack = false) {
+  const sheet = document.querySelector(".d-profile");
+  if (!sheet) return;
+  sheet.remove();
+  if (!fromBack && history.state?.nxProfile) history.back();
+}
+window.addEventListener("popstate", () => closeProfile(true));
+document.addEventListener("keydown", e => { if (e.key === "Escape") closeProfile(); });
+
+function openProfile(card, mutual) {
+  document.querySelector(".d-profile")?.remove();
+  if (!history.state?.nxProfile) history.pushState({ nxProfile: 1 }, "");
+  const sheet = el("div", "d-profile");
+  sheet.setAttribute("role", "dialog");
+  sheet.setAttribute("aria-modal", "true");
+  sheet.setAttribute("aria-label", `${card.first}'s profile`);
+  const inner = el("div", "d-profile-in");
+  const photo = el("div", "d-photo");
+  photoOrInitial(photo, card, "d-initial");
+  const back = el("button", "d-back");
+  back.type = "button";
+  back.setAttribute("aria-label", "Back");
+  back.append(icon("fa-back"));
+  back.addEventListener("click", () => closeProfile());
+  photo.append(back);
+  if (mutual) photo.append(el("span", "d-ribbon", "It's a match ♥"));
+  else {
+    const pill = el("span", "d-pill", `⏱ ${leftText(card.decideBy)}`);
+    pill.dataset.until = card.decideBy;
+    photo.append(pill);
+  }
+  photo.append(el("span", "d-name", card.first));
+  if (mutual) photo.querySelector(".d-ribbon").style.left = "64px";   // (beside the back arrow)
+  const { goal, hobbies } = datingWhy(card, true);
+  const body = el("div", "d-body");
+  body.append(el("p", "d-goal", goal));
+  if (mutual) {   // you both said Bae: their whole dating profile, what you share filled in
+    const full = datingProfileOf(card);
+    if (full.looking.length) body.append(el("p", "d-label", "Looking for"), markedChips(full.looking));
+    if (full.type) body.append(el("p", "d-label", "Human Design"), markedChips([{ label: full.type }]));
+    if (full.picks.length) body.append(el("p", "d-label", "Quick picks"), markedChips(full.picks));
+    if (full.hobbies.length) body.append(el("p", "d-label", "Hobbies"), markedChips(full.hobbies));
+    if ([...full.looking, ...full.picks, ...full.hobbies].some(x => x.both)) body.append(el("p", "d-hint d-legend", "Filled in: you both"));
+  } else if (hobbies.length) body.append(el("p", "d-label", "You both like"), chipsFor(hobbies));
+  inner.append(photo, body);
+  if (mutual) inner.append(card.handle ? copyHandle(card.handle) : el("p", "d-hint", "No handle left. Say hi next time!"));
+  else {
+    const bar = el("div", "d-vote");
+    const note = el("p", "d-hint");
+    const buttons = [["bae", "fa-bae", "Bae"], ["nay", "fa-nay", "Nay"]].map(([vote, iconId, label]) => {
+      const b = el("button", vote);
+      b.type = "button";
+      b.append(icon(iconId), document.createTextNode(label));
+      b.addEventListener("click", async () => { if (card.vote !== vote) { await setDatingVote(card, vote); show(); } });
+      bar.append(b);
+      return [vote, b];
+    });
+    const show = () => {
+      buttons.forEach(([vote, b]) => { b.classList.toggle("on", card.vote === vote); b.setAttribute("aria-pressed", card.vote === vote); });
+      note.textContent = `Nobody sees your choice. ${card.vote ? "You can change it" : "Choose"} until ${whenText(card.decideBy)}.`;
+    };
+    show();
+    inner.append(bar, note);
+  }
+  sheet.append(inner);
+  document.body.append(sheet);
+  back.focus();
+}
+
+function drawDating() {
   const list = document.getElementById("match-list");
   const hint = document.getElementById("matches-hint");
-  let rows, pending, loadCard;
-  if (DEMO) {
-    rows = DATING ? DEMO_ROWS.slice(0, 2) : DEMO_ROWS;
-    pending = { size: DATING ? 0 : 1 };
-    loadCard = async uid => (DATING ? DEMO_DATING_CARDS : DEMO_CARDS)[uid] || null;
-    if (DATING && !DEMO_DATING_CARDS["demo-alex"].photoURL) {   // Sam's sample photo: a drawn gradient, not a person
-      const c = document.createElement("canvas"), g = c.getContext("2d");
-      c.width = c.height = 96;
-      const fill = g.createLinearGradient(0, 0, 96, 96);
-      fill.addColorStop(0, "#f2994a"); fill.addColorStop(1, "#862eaf");
-      g.fillStyle = fill; g.fillRect(0, 0, 96, 96);
-      DEMO_DATING_CARDS["demo-alex"].photoURL = c.toDataURL("image/jpeg", 0.8);
+  list.replaceChildren();
+  const { open, done } = dating;
+
+  if (open.length) {
+    const stack = open.filter(c => !c.vote || datingRewound.has(c.matchId));
+    const decided = open.filter(c => c.vote && !datingRewound.has(c.matchId));
+    const block = el("li", "d-block");
+    const head = el("div", "d-head");
+    head.append(el("p", "d-label", "To decide"), el("p", "d-label", stack.length ? `${stack.length} left` : "All decided"));
+    const deck = el("div", "d-deck");
+    deck.tabIndex = 0;
+    deck.setAttribute("aria-label", "Matches to decide: right arrow for Bae, left arrow for Nay, Enter for their profile");
+    if (!stack.length) {
+      const d = el("div", "d-done");
+      const inner = el("div");
+      inner.append(el("strong", "", "All decided"), document.createTextNode("You can still change any of them below."));
+      d.append(inner);
+      deck.append(d);
     }
-  } else if (DATING) {
-    // Two calls (schema.sql): the matches still open to change, each with my own Bae, Nay or nothing yet and its
-    // deadline, never their choice or handle (my_dating_choices), undecided ones first; then the mutual Baes whose window
-    // has closed, newest first, with their handle (my_dating_matches). A Nay, no tap and a tag not synced yet all look
-    // the same once it's closed: nothing.
-    // and their photos, if they added one, for the same people (my_dating_photos)
+    stack.slice(0, 3).reverse().forEach((c, i, arr) => deck.append(swipeCard(c, arr.length - 1 - i)));
+    if (stack.length) dragCard(deck.lastElementChild, stack[0]);
+    deck.addEventListener("keydown", e => {
+      if (stack.length && e.key === "Enter") return openProfile(stack[0], false);
+      if (!stack.length || !["ArrowRight", "ArrowLeft"].includes(e.key)) return;
+      e.preventDefault();
+      buzz();
+      swipeMatch(stack[0], e.key === "ArrowRight" ? "bae" : "nay", deck.lastElementChild);
+    });
+    const actions = el("div", "d-actions");
+    const lastSwiped = () => open.find(c => c.matchId === datingSwiped[datingSwiped.length - 1]);
+    const rewind = roundButton("rewind", "fa-rewind", "Rewind: choose again for the last one you swiped", () => {
+      const c = lastSwiped();
+      if (!c) return;
+      datingSwiped.pop();
+      datingRewound.add(c.matchId);   // back on top of the stack; its last choice stays until a new swipe
+      drawDating();
+    });
+    rewind.disabled = !lastSwiped();
+    const nay = roundButton("nay", "fa-nay", "Nay", () => stack[0] && swipeMatch(stack[0], "nay", deck.lastElementChild));
+    const bae = roundButton("bae", "fa-bae", "Bae", () => stack[0] && swipeMatch(stack[0], "bae", deck.lastElementChild));
+    nay.disabled = bae.disabled = !stack.length;
+    actions.append(rewind, nay, bae);
+    block.append(head, deck, actions, el("p", "d-hint", "Swipe right for Bae, left for Nay, or tap to see their profile. Started from what you tapped on your tag."));
+    list.append(block);
+
+    if (decided.length) {
+      const mine = el("li", "d-block");
+      const h = el("div", "d-head");
+      const baes = decided.filter(c => c.vote === "bae").length;
+      h.append(el("p", "d-label", "Your choices"), el("p", "d-label", `${baes} Bae · ${decided.length - baes} Nay`));
+      const ul = el("ul", "d-choices");
+      for (const c of decided) {
+        const li = el("li", "d-tap");
+        li.addEventListener("click", e => { if (!e.target.closest(".d-toggle")) openProfile(c, false); });
+        const thumb = el("div", "d-thumb");
+        photoOrInitial(thumb, c, "");
+        const who = el("div", "d-who");
+        who.append(el("b", "", c.first), el("span", "", datingWhy(c).hobbies.join(", ")));
+        const toggle = el("div", "d-toggle");
+        for (const [vote, cls, label] of [["bae", "b", "♥ Bae"], ["nay", "n", "✕ Nay"]]) {
+          const b = el("button", `${cls}${c.vote === vote ? " on" : ""}`, label);
+          b.type = "button";
+          b.setAttribute("aria-pressed", c.vote === vote);
+          b.addEventListener("click", () => c.vote !== vote && setDatingVote(c, vote));
+          toggle.append(b);
+        }
+        li.append(thumb, who, toggle);
+        ul.append(li);
+      }
+      mine.append(h, ul);
+      list.append(mine);
+    }
+  }
+
+  if (done.length) {
+    const label = el("li", "d-block");
+    label.append(el("p", "d-label", "Mutual Baes"));
+    list.append(label);
+    for (const c of done) {
+      const li = el("li", "d-block d-mutual d-tap");
+      li.addEventListener("click", e => { if (!e.target.closest(".d-handle")) openProfile(c, true); });
+      const photo = el("div", "d-photo");
+      photoOrInitial(photo, c, "d-initial");
+      photo.append(el("span", "d-ribbon", "It's a match ♥"), el("span", "d-name", c.first));
+      const { goal, hobbies } = datingWhy(c);
+      const body = el("div", "d-body");
+      body.append(el("p", "d-goal", goal), chipsFor(hobbies),
+                  c.handle ? copyHandle(c.handle) : el("p", "d-hint", "No handle left. Say hi next time!"));
+      li.append(photo, body);
+      list.append(li);
+    }
+  }
+
+  if (!open.length && !done.length) {
+    const empty = el("li", "empty");
+    empty.append(el("strong", "", "No mutual Baes yet"),
+                 document.createTextNode(!myTag ? "Send your profile to your tag first: tap its screen, then scan the QR code."
+                   : "Tap Bae on the people you'd like to see again. After the event you get some time here to change any Bae or Nay; then the people you both said Bae to show here."));
+    list.append(empty);
+  }
+
+  const deadline = Math.max(0, ...open.map(c => Date.parse(c.decideBy)));
+  hint.textContent = open.length ? `Sealed until ${whenText(deadline)}. Nobody sees your choices; only mutual Baes are shown then.`
+    : done.length ? "People you both said Bae to. Only they see your first name and handle."
+    : "After the event: time to change any Bae or Nay, then the people you both said Bae to.";
+  const badge = document.getElementById("match-count");
+  badge.textContent = open.length + done.length;
+  badge.hidden = !(open.length + done.length);
+}
+
+// Sample people for ?demo=1&e=d (drawn pictures, nothing saved): two to decide, two already decided on the tag, two
+// mutual Baes
+function demoDating() {
+  const until = new Date(Date.now() + 2 * 864e5 + 4 * 36e5).toISOString();
+  const pic = (a, b) => {
+    const c = document.createElement("canvas"), g = c.getContext("2d");
+    c.width = c.height = 160;
+    const fill = g.createLinearGradient(0, 0, 160, 160);
+    fill.addColorStop(0, a); fill.addColorStop(1, b);
+    g.fillStyle = fill; g.fillRect(0, 0, 160, 160);
+    g.fillStyle = "#ffffff55"; g.beginPath(); g.arc(56, 52, 30, 0, 7); g.fill();
+    return c.toDataURL("image/jpeg", 0.8);
+  };
+  return {
+    open: [
+      { matchId: -1, first: "Sam", goal: "Both: Slow & steady", hobbies: ["Running", "Coffee", "Board games"], vote: "", decideBy: until, photoURL: pic("#f2994a", "#862eaf") },
+      { matchId: -2, first: "Mei", goal: "Both: See where it goes", hobbies: ["Travel", "Film"], vote: "", decideBy: until },
+      { matchId: -3, first: "Ravi", goal: "Both: Slow & steady", hobbies: ["Football"], vote: "bae", decideBy: until, photoURL: pic("#a3e635", "#14532d") },
+      { matchId: -4, first: "Lin", goal: "Generator meets Projector", hobbies: ["Coffee", "Art"], vote: "nay", decideBy: until },
+    ],
+    done: [
+      { tagId: "demo-jo", savedAt: "demo", first: "Jo", goal: "Projector meets Generator", hobbies: ["Live music", "Board games"], photoURL: pic("#f472b6", "#5b2a6e"),
+        theirs: { looking: [{ label: "See where it goes" }], type: "Projector", picks: [{ label: "Night owl", both: true }, { label: "Cat person" }, { label: "Spontaneous" }],
+                  hobbies: [{ label: "Live music", both: true }, { label: "Board games", both: true }, { label: "Art" }, { label: "Books" }] } },
+      { tagId: "demo-alex", savedAt: "demo", first: "Alex", goal: "Both: Slow & steady", hobbies: ["Climbing", "Cooking"], handle: "@alex.climbs",
+        theirs: { looking: [{ label: "Slow & steady", both: true }], type: "", picks: [{ label: "Early bird", both: true }, { label: "Dog person" }, { label: "Coffee date", both: true }, { label: "Planner" }],
+                  hobbies: [{ label: "Climbing", both: true }, { label: "Cooking", both: true }, { label: "Hiking" }, { label: "Travel" }, { label: "Photography" }] } },
+    ],
+  };
+}
+
+async function renderDating() {
+  if (DEMO) {
+    if (!dating.demo) dating = { ...demoDating(), demo: true };
+  } else {
+    // Three calls (schema.sql): the matches still open to change, each with my own Bae, Nay or nothing yet and its
+    // deadline, never their choice or handle (my_dating_choices); the mutual Baes whose window has closed, newest
+    // first, with their handle (my_dating_matches); and photos for the same people (my_dating_photos)
     const [open, done, photos] = await Promise.all([supabase.rpc("my_dating_choices"), supabase.rpc("my_dating_matches"),
                                                     supabase.rpc("my_dating_photos")]);
     if (open.error) throw open.error;
     if (done.error) throw done.error;
     if (photos.error) console.error(photos.error);   // (no photos is no reason to show no matches)
     const photo = new Map((photos.data || []).map(r => [r.match_id ? "c" + r.match_id : r.tag_id, r.photo]));
-    const cards = new Map([
-      ...open.data.map(r => ["c" + r.match_id, { first: r.first, interests: Number(r.interests), offer: r.offer,
-        seek: r.seek, open: true, matchId: r.match_id, vote: r.vote, decideBy: r.decide_by, photoURL: photo.get("c" + r.match_id) }]),
-      ...done.data.map(r => [r.tag_id, { first: r.first, handle: r.handle,
-        interests: Number(r.interests), offer: r.offer, seek: r.seek, photoURL: photo.get(r.tag_id) }])]);
-    rows = [...open.data.filter(r => !r.vote), ...open.data.filter(r => r.vote)].map(r => ({ uid: "c" + r.match_id }))
-      .concat(done.data.map(r => ({ uid: r.tag_id })));
-    pending = { size: 0 };
-    loadCard = async key => cards.get(key) || null;
+    dating = {
+      open: open.data.map(r => ({ matchId: r.match_id, first: r.first, interests: Number(r.interests), offer: r.offer,
+                                  seek: r.seek, vote: r.vote, decideBy: r.decide_by, photoURL: photo.get("c" + r.match_id) })),
+      done: done.data.map(r => ({ tagId: r.tag_id, savedAt: r.saved_at, first: r.first, handle: r.handle,
+                                  interests: Number(r.interests), offer: r.offer, seek: r.seek, photoURL: photo.get(r.tag_id) })),
+    };
+  }
+  drawDating();
+  if (dating.done.length && activeTab === "matches") showReveals(dating.done);
+  // Drawn again just after the first deadline passes, so mutual Baes appear without a reload (a window can be minutes);
+  // the countdowns tick every minute
+  clearTimeout(revealTimer);
+  const soonest = Math.min(...dating.open.map(c => Date.parse(c.decideBy)));
+  if (soonest < Infinity && !DEMO) revealTimer = setTimeout(() => renderMatches().catch(console.error),
+                                                            Math.max(0, soonest - Date.now()) + 2000);
+  clearInterval(countdownTimer);
+  if (dating.open.length) countdownTimer = setInterval(() => document.querySelectorAll(".d-pill[data-until]").forEach(p => {
+    p.textContent = `⏱ ${leftText(p.dataset.until)}`;
+    p.classList.toggle("soon", Date.parse(p.dataset.until) - Date.now() < 36e5);
+  }), 60000);
+}
+
+async function renderMatches() {
+  if (DATING) return renderDating();
+  const list = document.getElementById("match-list");
+  const hint = document.getElementById("matches-hint");
+  let rows, pending, loadCard;
+  if (DEMO) {
+    rows = DEMO_ROWS;
+    pending = { size: 1 };
+    loadCard = async uid => DEMO_CARDS[uid] || null;
   } else {
     // One call, newest first, each with its status worked out by the database (my_matches in schema.sql): mutual
     // ones come with the card, waiting ones (their tag hasn't been read yet) without. Rows are keyed by tag ID.
@@ -1232,7 +1658,7 @@ async function renderMatches() {
   }
   list.replaceChildren();
 
-  let waiting = 0, deadline = 0, soonest = Infinity;   // the last and first deadlines among the open dating matches
+  let waiting = 0;
   for (const row of rows) {
     let card = null;
     try { card = await loadCard(row.uid); } catch (e) {}
@@ -1257,18 +1683,6 @@ async function renderMatches() {
     if (sub) body.append(el("p", "sub", sub));
     const why = card.why || matchReason(card);
     if (why) body.append(el("p", "why", why));
-    if (DATING && card.open) {
-      deadline = Math.max(deadline, Date.parse(card.decideBy));
-      soonest = Math.min(soonest, Date.parse(card.decideBy));
-      body.append(datingChoice(card));
-      list.append(li);
-      continue;
-    }
-    if (DATING) {
-      body.append(el("p", "sub", card.handle ? `It's mutual! ${card.handle}` : "It's mutual!"));
-      list.append(li);
-      continue;
-    }
     const actions = el("div", "actions");
     if (/^https:\/\//i.test(card.linkedin || "")) {
       const a = el("a", "btn btn-ghost", "LinkedIn");
@@ -1286,21 +1700,15 @@ async function renderMatches() {
 
   if (!rows.length) {
     const empty = el("li", "empty");
-    empty.append(el("strong", "", pending.size ? "Almost there" : DATING ? "No mutual Baes yet" : "No matches yet"),
+    empty.append(el("strong", "", pending.size ? "Almost there" : "No matches yet"),
                  document.createTextNode(!myTag ? "Send your profile to your tag first: tap its screen, then scan the QR code."
-                   : DATING ? "Tap Bae on the people you'd like to see again. After the event you get some time here to change any Bae or Nay; then the people you both said Bae to show here."
                    : "Wear your tag at the event. Your matches appear here after you return your tag at the desk."));
     list.append(empty);
   }
   const notes = [];
   if (waiting) notes.push(`${waiting} waiting for the other person's tag to be returned.`);
   if (pending.size) notes.push(`${pending.size} matched with someone who hasn't set up their profile yet. They'll appear once they do.`);
-  clearTimeout(revealTimer);
-  if (soonest < Infinity && !DEMO) revealTimer = setTimeout(() => renderMatches().catch(console.error),
-                                                            Math.max(0, soonest - Date.now()) + 2000);
-  if (deadline) notes.push(`Your Baes stay sealed until ${whenText(deadline)}. Then the people you both said Bae to show here, with their handle; nobody is told about a Nay.`);
-  hint.textContent = notes.join(" ") || (DATING ? "People you both said Bae to. Only they see your first name and handle."
-                                               : "People your tag matched with. They see your details only if their tag matched you too.");
+  hint.textContent = notes.join(" ") || "People your tag matched with. They see your details only if their tag matched you too.";
   const resolved = rows.length - waiting;
   const badge = document.getElementById("match-count");
   badge.textContent = resolved;

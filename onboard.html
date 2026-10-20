@@ -113,6 +113,7 @@
   label.field > span, div.field > span { display: block; font-size: 15px; font-weight: 600; margin-bottom: 6px; }
   /* The dating photo: a round preview, then Add / Change and Remove */
   .photo-row { display: flex; align-items: center; gap: 12px; }
+  .photo-buttons { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-width: 0; }   /* wrap beside the photo */
   .photo-row .initials { width: 56px; height: 56px; flex: 0 0 56px; }
   input[type=text], input[type=url] {
     width: 100%; min-height: var(--tap); padding: 12px 14px; border-radius: 12px; border: 1px solid var(--border);
@@ -176,6 +177,131 @@
   .match .actions .btn-on { background: var(--accent); border: 1px solid var(--accent); color: var(--text); }   /* the Bae or Nay chosen */
   .empty { text-align: center; color: var(--dim); padding: 28px 12px; }
   .empty strong { display: block; color: var(--text); font-size: 17px; margin-bottom: 6px; }
+
+  /* Dating matches (renderDating): a stack to swipe (right Bae, left Nay) for the ones still to decide, "Your choices"
+     to change any of them until the deadline, then a reveal and a photo card per mutual Bae */
+  .match-list > li.d-block { list-style: none; }
+  .d-sample { width: 100%; max-width: 280px; margin: 0 auto; }
+  .d-sample .d-photo { aspect-ratio: 16 / 9; }
+  .d-sample .d-initial { font-size: 56px; }
+  .d-sample .d-name { font-size: 24px; }
+  .d-sample .d-actions { margin: 12px 0 0; gap: 16px; }
+  .d-sample .d-round { width: 48px; height: 48px; } .d-sample .d-round svg { width: 20px; height: 20px; }
+  .d-sample .d-round.rewind { width: 38px; height: 38px; } .d-sample .d-round.rewind svg { width: 16px; height: 16px; }
+  .d-head { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; margin: 0 0 10px; }
+  .d-label { font: 12px/1.4 var(--pixel); letter-spacing: .06em; text-transform: uppercase; color: var(--dim); margin: 0; }
+  .d-deck { position: relative; height: min(430px, 62vh); touch-action: pan-y; user-select: none; -webkit-user-select: none; }
+  .d-deck:focus-visible { outline: 2px solid var(--accent-hi); outline-offset: 4px; border-radius: 22px; }
+  .d-card { position: absolute; inset: 0; background: var(--surface); border: 1px solid var(--border); border-radius: 20px; overflow: hidden;
+            display: flex; flex-direction: column; will-change: transform; cursor: grab; touch-action: pan-y; }
+  .d-card.behind { transform: scale(.95) translateY(14px); filter: brightness(.7); }
+  .d-card.behind2 { transform: scale(.9) translateY(28px); filter: brightness(.5); }
+  .d-card.going { transition: transform .3s cubic-bezier(.2,.7,.3,1), opacity .3s ease-out; }
+  .d-card.back { transition: transform .35s cubic-bezier(.3,1.5,.5,1); }   /* a little overshoot: it springs back */
+  .d-photo { position: relative; flex: 1; min-height: 0; display: grid; place-items: center; overflow: hidden; }
+  .d-photo > img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; pointer-events: none; }
+  .d-photo .d-initial { font-size: 96px; font-weight: 800; color: #ffffffd9; text-shadow: 0 4px 24px #0006; }
+  .d-photo::after { content: ""; position: absolute; inset: 50% 0 0; background: linear-gradient(transparent, #000000d0); pointer-events: none; }
+  .d-name { position: absolute; left: 16px; bottom: 12px; z-index: 1; font-size: 32px; font-weight: 800; }
+  .d-pill { position: absolute; top: 12px; left: 12px; z-index: 2; font: 11px/1 var(--pixel); letter-spacing: .06em; text-transform: uppercase;
+            background: #000000a6; padding: 7px 10px; border-radius: 999px; color: #fff; }
+  .d-pill.soon { background: #c2566acc; }
+  .d-stamp { position: absolute; top: 34px; z-index: 3; font: 30px/1 var(--pixel); padding: 8px 14px; border: 4px solid; border-radius: 12px; opacity: 0; }
+  .d-stamp.bae { left: 22px; color: #e9c6ff; border-color: #c084fc; transform: rotate(-14deg); text-shadow: 0 0 14px #a24fd0; }
+  .d-stamp.nay { right: 22px; color: #ffc2cc; border-color: #f87171; transform: rotate(14deg); }
+  .d-stamp.hit { animation: d-hit .18s ease-out; }
+  @keyframes d-hit { 50% { scale: 1.15; } }
+  .d-body { padding: 12px 16px 14px; }
+  .d-goal { color: #d6b4ec; font-size: 14px; font-weight: 600; margin: 0 0 8px; }
+  .d-goal:empty { display: none; }
+  .d-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+  .d-chips span { font-size: 13px; padding: 4px 10px; border-radius: 999px; background: var(--accent-soft); border: 1px solid #862eaf66; color: #f0e2f8; }
+  .d-actions { display: flex; justify-content: center; gap: 22px; margin: 18px 0 6px; }
+  .d-round { width: 64px; height: 64px; border-radius: 50%; border: 1.5px solid var(--border); background: var(--surface-2); color: var(--text);
+             display: grid; place-items: center; cursor: pointer; transition: transform .12s ease; padding: 0; }
+  .d-round svg { width: 26px; height: 26px; }
+  .d-round:active { transform: scale(.92); }
+  .d-round:disabled { opacity: .35; cursor: default; }
+  .d-round.nay { color: #ff9aa9; }
+  .d-round.bae { color: #fff; background: var(--accent); border-color: var(--accent-hi); box-shadow: 0 6px 22px #862eaf66; }
+  /* Rewind, as Tinder's: smaller, a yellow back arrow, first in the row; it brings back the last swipe to choose again */
+  .d-round.rewind { width: 48px; height: 48px; align-self: center; color: #facc15; border-color: #facc1555; }
+  .d-round.rewind svg { width: 20px; height: 20px; }
+  .d-hint { color: var(--dim); font-size: 13px; text-align: center; margin: 0; }
+  .d-done { position: absolute; inset: 0; border: 1px dashed var(--border); border-radius: 20px; display: grid; place-items: center;
+            text-align: center; padding: 24px; color: var(--dim); }
+  .d-done strong { display: block; color: var(--text); font-size: 20px; margin-bottom: 6px; }
+  .d-choices { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; }
+  .d-choices li { display: flex; align-items: center; gap: 12px; background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 8px 10px; }
+  .d-thumb { width: 42px; height: 42px; border-radius: 50%; display: grid; place-items: center; font-weight: 800; flex: 0 0 42px; overflow: hidden; }
+  .d-thumb img { width: 100%; height: 100%; object-fit: cover; }
+  .d-who { flex: 1; min-width: 0; }
+  .d-who b { display: block; }
+  .d-who span { color: var(--dim); font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: block; }
+  .d-toggle { display: flex; border: 1px solid var(--border); border-radius: 999px; overflow: hidden; flex: 0 0 auto; }
+  .d-toggle button { border: 0; background: none; color: var(--dim); padding: 0 12px; min-height: 36px; font-size: 14px; font-weight: 700; cursor: pointer; }
+  .d-toggle .on.b { background: var(--accent); color: #fff; }
+  .d-toggle .on.n { background: #c2566a; color: #fff; }
+  /* After the deadline: a mutual Bae's photo card, with the handle to copy */
+  .d-mutual { background: var(--surface); border: 1px solid #a24fd080; border-radius: 18px; overflow: hidden; }
+  .d-mutual .d-photo { aspect-ratio: 4 / 3; flex: none; }
+  .d-mutual .d-name { font-size: 30px; }
+  .d-ribbon { position: absolute; top: 12px; left: 12px; z-index: 1; font: 11px/1 var(--pixel); letter-spacing: .08em; text-transform: uppercase;
+              background: var(--accent); padding: 7px 10px; border-radius: 999px; box-shadow: 0 0 18px #a24fd099; }
+  .d-mutual .d-body { padding: 14px 16px 16px; }
+  .d-mutual .d-chips { margin-bottom: 14px; }
+  .d-handle { width: 100%; min-height: 52px; border-radius: 14px; border: 1.5px solid var(--accent-hi); background: var(--accent-soft); color: var(--text);
+              font-size: 17px; font-weight: 700; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 10px; }
+  .d-handle small { font: 11px/1 var(--pixel); letter-spacing: .06em; text-transform: uppercase; color: #d6b4ec; }
+  /* A match's profile, opened by tapping them anywhere on the Matches page: big photo, what you share, and Bae / Nay
+     (or their handle, after the deadline) */
+  .d-profile { position: fixed; inset: 0; z-index: 40; background: var(--bg); overflow-y: auto; overscroll-behavior: contain; }
+  .d-profile-in { max-width: 560px; margin: 0 auto; padding: 0 0 max(24px, env(safe-area-inset-bottom)); }
+  .d-profile .d-photo { width: 100%; flex: none; height: min(125vw, 70vh, 700px); }   /* full width, about 4:5 on a phone */
+  .d-profile .d-name { font-size: 36px; bottom: 16px; left: 20px; }
+  .d-profile .d-pill { top: max(14px, env(safe-area-inset-top)); left: auto; right: 14px; }
+  .d-back { position: absolute; top: max(12px, env(safe-area-inset-top)); left: 12px; z-index: 3; width: 44px; height: 44px; border-radius: 50%;
+            border: 0; background: #000000a6; color: #fff; display: grid; place-items: center; cursor: pointer; padding: 0; }
+  .d-back svg { width: 18px; height: 18px; }
+  .d-profile .d-body { padding: 18px 20px 8px; }
+  .d-profile .d-goal { font-size: 16px; }
+  .d-profile .d-label { margin: 16px 0 8px; }
+  .d-vote { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; padding: 18px 20px 6px; }
+  .d-vote button { min-height: 54px; border-radius: 14px; border: 1.5px solid var(--border); background: var(--surface-2); color: var(--text);
+                   font-size: 17px; font-weight: 700; display: flex; align-items: center; justify-content: center; gap: 8px; cursor: pointer; }
+  .d-vote button svg { width: 18px; height: 18px; }
+  .d-vote .bae.on { background: var(--accent); border-color: var(--accent-hi); box-shadow: 0 6px 22px #862eaf66; }
+  .d-vote .nay.on { background: #c2566a; border-color: #e07a8c; }
+  .d-profile .d-hint { padding: 0 20px; }
+  .d-profile .d-handle { margin: 18px 20px 0; width: calc(100% - 40px); }
+  .d-tap { cursor: pointer; }
+  .d-chips.marked span { background: var(--surface-2); border-color: var(--border); color: var(--text); }
+  .d-chips.marked span.both { background: var(--accent); border-color: var(--accent-hi); color: #fff; }
+  .d-profile .d-legend { text-align: left; padding: 0; margin: 12px 0 0; }
+  @media (prefers-reduced-motion: no-preference) { .d-profile { animation: d-fadein .2s ease-out; } }
+  /* The reveal: once per mutual Bae on this phone, full screen */
+  .d-reveal { position: fixed; inset: 0; z-index: 50; display: flex; flex-direction: column; align-items: center; justify-content: center;
+              padding: 28px 22px; text-align: center; background: radial-gradient(circle at 50% 38%, #862eaf66, transparent 60%), #0d0a12fa; }
+  .d-reveal .kicker { font: 12px/1.4 var(--pixel); letter-spacing: .1em; text-transform: uppercase; color: #d6b4ec; margin: 0 0 6px; }
+  .d-reveal h2 { font-size: 34px; margin: 0 0 22px; }
+  .d-reveal .face { width: 210px; height: 210px; border-radius: 50%; display: grid; place-items: center; font-size: 80px; font-weight: 800;
+                    overflow: hidden; box-shadow: 0 0 0 6px #a24fd055, 0 0 60px 10px #a24fd088; }
+  .d-reveal .face img { width: 100%; height: 100%; object-fit: cover; }
+  .d-reveal .rname { font-size: 28px; font-weight: 800; margin: 18px 0 2px; }
+  .d-reveal .rwhy { color: #d6b4ec; font-size: 15px; margin: 0 0 18px; }
+  .d-reveal .d-handle { max-width: 320px; }
+  .d-reveal .next { margin-top: 14px; min-height: var(--tap); background: none; border: 0; color: var(--dim); text-decoration: underline; cursor: pointer; font-size: 15px; }
+  .d-reveal .count { position: absolute; top: max(18px, env(safe-area-inset-top)); right: 20px; font: 11px/1 var(--pixel); letter-spacing: .06em;
+                     text-transform: uppercase; color: var(--dim); }
+  .d-reveal .heart { position: absolute; width: 22px; height: 22px; opacity: 0; pointer-events: none; }
+  @media (prefers-reduced-motion: no-preference) {
+    .d-reveal { animation: d-fadein .35s ease-out; }
+    .d-reveal .face { animation: d-pop .7s cubic-bezier(.2,1.6,.4,1) both; }
+    .d-reveal .heart { animation: d-float 2.2s ease-out forwards; }
+  }
+  @keyframes d-fadein { from { opacity: 0; } }
+  @keyframes d-pop { from { transform: scale(.4); opacity: 0; } }
+  @keyframes d-float { 0% { opacity: 0; transform: translateY(0) scale(.6); } 20% { opacity: 1; } 100% { opacity: 0; transform: translateY(-180px) scale(1.2); } }
 
   /* Sticky action bar in the thumb zone */
   .bar { position: fixed; left: 0; right: 0; bottom: 0; z-index: 6; padding: 18px 16px calc(12px + env(safe-area-inset-bottom));
@@ -323,6 +449,15 @@
 </style>
 </head>
 <body>
+<!-- Icons for the dating match cards. Font Awesome Free 6.5.2 by @fontawesome - https://fontawesome.com
+     License - https://fontawesome.com/license/free (Icons: CC BY 4.0) Copyright 2024 Fonticons, Inc.
+     The same family as the tag's own icons (firmware/src/fonts). -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="fa-rewind" viewBox="0 0 512 512"><path fill="currentColor" d="M48.5 224H40c-13.3 0-24-10.7-24-24V72c0-9.7 5.8-18.5 14.8-22.2s19.3-1.7 26.2 5.2L98.6 96.6c87.6-86.5 228.7-86.2 315.8 1c87.5 87.5 87.5 229.3 0 316.8s-229.3 87.5-316.8 0c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0c62.5 62.5 163.8 62.5 226.3 0s62.5-163.8 0-226.3c-62.2-62.2-162.7-62.5-225.3-1L185 183c6.9 6.9 8.9 17.2 5.2 26.2s-12.5 14.8-22.2 14.8H48.5z"/></symbol>
+  <symbol id="fa-nay" viewBox="0 0 384 512"><path fill="currentColor" d="M342.6 150.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0L192 210.7 86.6 105.4c-12.5-12.5-32.8-12.5-45.3 0s-12.5 32.8 0 45.3L146.7 256 41.4 361.4c-12.5 12.5-12.5 32.8 0 45.3s32.8 12.5 45.3 0L192 301.3 297.4 406.6c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L237.3 256 342.6 150.6z"/></symbol>
+  <symbol id="fa-back" viewBox="0 0 448 512"><path fill="currentColor" d="M9.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.2 288 416 288c17.7 0 32-14.3 32-32s-14.3-32-32-32l-306.7 0L214.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></symbol>
+  <symbol id="fa-bae" viewBox="0 0 512 512"><path fill="currentColor" d="M47.6 300.4L228.3 469.1c7.5 7 17.4 10.9 27.7 10.9s20.2-3.9 27.7-10.9L464.4 300.4c30.4-28.3 47.6-68 47.6-109.5v-5.8c0-69.9-50.5-129.5-119.4-141C347 36.5 300.6 51.4 268 84L256 96 244 84c-32.6-32.6-79-47.5-124.6-39.9C50.5 55.6 0 115.2 0 185.1v5.8c0 41.5 17.2 81.2 47.6 109.5z"/></symbol>
+</svg>
 <header class="top">
   <div class="top-row">
     <div class="brand">Nex<span>Swap</span></div>
@@ -479,9 +614,14 @@
           <ul class="match-list sample" data-only="business"><li class="match"><div class="initials">A</div><div>
             <p class="name">Alex</p><p class="sub" data-them-role>Head of Sales · Demo Co</p><p class="why" data-sample-why>Selling · AI, Fintech</p>
             <div class="actions"><span class="btn btn-ghost">LinkedIn</span></div></div></li></ul>
-          <ul class="match-list sample" data-only="dating" hidden><li class="match"><div class="initials">S</div><div>
-            <p class="name">Sam</p><p class="why" data-sample-why>Both: Slow &amp; steady · Running, Coffee</p>
-            <div class="actions"><span class="btn btn-on">Bae</span><span class="btn btn-ghost">Nay</span></div></div></li></ul>
+          <!-- The dating Matches page's swipe card (renderDating), drawn small -->
+          <div class="d-sample" data-only="dating" hidden>
+            <div class="d-mutual"><div class="d-photo" style="background: linear-gradient(140deg, #f472b6, #2a1438)"><span class="d-initial">S</span>
+              <span class="d-pill">⏱ 2 days left</span><span class="d-name">Sam</span></div>
+              <div class="d-body"><p class="d-goal" data-sample-why>Both: Slow &amp; steady · Running, Coffee</p></div></div>
+            <div class="d-actions"><span class="d-round rewind"><svg aria-hidden="true"><use href="#fa-rewind"/></svg></span>
+              <span class="d-round nay"><svg aria-hidden="true"><use href="#fa-nay"/></svg></span>
+              <span class="d-round bae"><svg aria-hidden="true"><use href="#fa-bae"/></svg></span></div></div>
         </div>
         <h1>After the event</h1>
         <p data-only="business">Return your tag at the desk. Your <strong>Matches</strong> then show everyone you met, with their LinkedIn.</p>
@@ -532,8 +672,12 @@
           <p class="hint">Only people you both say Bae to see it, after the event. Never on your tag. Needs sign-in.</p></label>
         <div class="field" data-only="dating" hidden><span>Photo (optional)</span>
           <div class="photo-row"><div class="initials" id="photo-preview" aria-hidden="true">?</div>
-            <label class="btn btn-ghost" id="photo-pick">Add a photo<input type="file" id="photo-file" accept="image/*" hidden></label>
-            <button type="button" class="btn btn-link" id="photo-remove" hidden>Remove</button></div>
+            <!-- Two ways in: newer Android phones' photo picker has no camera button, so the camera gets its own
+                 (capture: the front camera, on phones only) -->
+            <div class="photo-buttons">
+            <label class="btn btn-ghost" id="photo-take" hidden>Take a photo<input type="file" id="photo-camera" accept="image/*" capture="user" hidden></label>
+            <label class="btn btn-ghost" id="photo-pick">Choose a photo<input type="file" id="photo-file" accept="image/*" hidden></label>
+            <button type="button" class="btn btn-link" id="photo-remove" hidden>Remove</button></div></div>
           <p class="hint" id="photo-hint">The people you match with see it while they choose Bae or Nay, and your mutual Baes
             after that. Never on your tag. Needs sign-in.</p></div>
       </fieldset>
@@ -585,8 +729,8 @@
          Singapore region). When you return your tag, we copy who it matched and whether you tapped Bae or Nay, and for
          a while after the event (the organiser sets how long, from minutes to two weeks) you can change any of them on the Matches page; we
          save what you change it to. During that time the people you matched see your first name, your photo if you added one
-         and what you have in common, but not your handle or your choice. Who you are and would like to meet is never saved. After that, your first name and handle are
-         shown only to people you both said Bae to (and your photo too); nobody is told about a Nay. A photo is made smaller
+         and what you have in common, but not your handle or your choice. Who you are and would like to meet is never saved. After that, the people you both said Bae to (and only them) see your first name, handle, photo and your whole dating
+         profile: what you're looking for,<span data-hd hidden> your type,</span> your quick picks and hobbies. Nobody is told about a Nay. A photo is made smaller
          on your phone before it's saved, which also removes its location and camera details. Your dating profile and matches are deleted after 30 days, or any time
          with the button below.</p>
       <p>Without signing in, nothing is saved to an account and you won't see your matches. This phone remembers your
