@@ -9,6 +9,9 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="color-scheme" content="dark">
 <meta name="theme-color" content="#121016">
+<!-- Kept out of search results: it's for people holding a tag, and its links can carry a tag's setup code.
+     nexswap.events (the landing site) is what NexSwap searches find. -->
+<meta name="robots" content="noindex">
 <title>NexSwap</title>
 <!-- Silkscreen: a pixel font for small labels, echoing the tag's screen -->
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -55,7 +58,7 @@
                 background: linear-gradient(var(--bg) 0 4px, transparent 4px 5px, var(--bg) 5px 8px, transparent 8px 10px,
                                             var(--bg) 10px 12px, transparent 12px 15px, var(--bg) 15px 16px); }
   .top-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; max-width: 560px; margin: 0 auto; min-height: var(--tap); }
-  .brand { font-weight: 700; font-size: 20px; letter-spacing: .01em; }
+  .brand { font-weight: 700; font-size: 20px; letter-spacing: .01em; color: var(--text); text-decoration: none; }
   .brand span { color: var(--accent-hi); }
   .me { display: flex; align-items: center; gap: 8px; min-width: 0; }
   .me p { margin: 0; font-size: 14px; color: var(--dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 46vw; }
@@ -509,7 +512,7 @@
 </svg>
 <header class="top">
   <div class="top-row">
-    <div class="brand">Nex<span>Swap</span></div>
+    <a class="brand" href="https://nexswap.events/" target="_blank" rel="noopener">Nex<span>Swap</span></a>
     <div class="me" id="signed-in" hidden>
       <img id="avatar" class="avatar" alt="" referrerpolicy="no-referrer" hidden>
       <p id="who"></p>
