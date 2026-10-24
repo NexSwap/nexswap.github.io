@@ -95,6 +95,16 @@ const DATE_REASONS = { 0: "You both run", 1: "You both hike", 4: "You both climb
   16: "You both game", 17: "You both play board games", 18: "You both read", 19: "You both love art",
   20: "You both take photos", 22: "You both like slowing down", 24: "You're both early birds", 25: "You're both night owls",
   26: "You're both dog people", 27: "You're both cat people", 28: "You both like coffee dates", 29: "You both like drinks dates" };
+// A pair perk at a spot (openVoucher), by name: the ask in the bizdev tracker ("Perk to ask for"), not agreed with any
+// venue yet. Free public places have none
+const DATE_PERKS = { "Atlas": "Welcome drink for two", "Jigger & Pony": "Welcome drink for two",
+  "Le Bon Funk": "A glass of wine on the house", "Wild Honey": "Free coffees for two",
+  "Tiong Bahru Bakery": "Free pastry with two coffees", "Apartment Coffee": "Free drink or pastry for two",
+  "Nylon Coffee Roasters": "Free drink or pastry for two", "Boulder Movement": "Free shoe rental for two",
+  "fit · bloc": "Free shoe rental for two", "Palate Sensations": "Couples rate", "Teo Heng KTV": "Extra hour free",
+  "Golden Village": "Discounted tickets for two", "Timezone": "Bonus game credit for two", "Settlers Cafe": "Free game cover for two",
+  "Kinokuniya": "Book voucher for two", "National Gallery Singapore": "Two-for-one tickets", "ArtScience Museum": "Two-for-one tickets",
+  "Surrey Hills Grocer": "Free dog treat with two coffees", "Catmosphere Cat Cafe": "2-for-1 first hour" };
 const DATE_FALLBACK = [["☕", "Apartment Coffee", "Café", "Selegie Rd"], ["🌳", "Gardens by the Bay", "Gardens", "Marina Bay", true]];
 const IAM = ["Woman", "Man", "Non-binary", "Prefer not to say"];   // "who" bits 0-1: 1, 2, 3, 0
 const OPEN = ["Women", "Men", "Non-binary people"];                // "who" bits 2-4 (none = everyone)
@@ -1364,18 +1374,19 @@ function dateIdeas(card) {
     const [emoji, name, kind, area, free] = spots[(seed + b) % spots.length];
     if (seen.has(name)) continue;
     seen.add(name);
-    ideas.push({ emoji, name, kind, area, free: !!free, why: DATE_REASONS[b] });
+    ideas.push({ emoji, name, kind, area, free: !!free, why: DATE_REASONS[b], perk: DATE_PERKS[name] });
   }
   ideas = [...ideas.filter(x => !x.free), ...ideas.filter(x => x.free)];   // (in order within each)
   if (!ideas.length) {
     const [emoji, name, kind, area] = DATE_FALLBACK[seed % DATE_FALLBACK.length];
-    ideas.push({ emoji, name, kind, area, why: "A classic first date" });
+    ideas.push({ emoji, name, kind, area, why: "A classic first date", perk: DATE_PERKS[name] });
   }
   return ideas.slice(0, 3);
 }
 
-// A box of first-date spots, each with a Google Maps search (phones open the Maps app)
-function dateIdeasBox(ideas, label) {
+// A box of first-date spots, each with a Google Maps search (phones open the Maps app), and under one with a pair perk,
+// the perk and Use (openVoucher)
+function dateIdeasBox(ideas, label, card) {
   const box = el("div", "d-idea");
   box.append(el("p", "d-label", label));
   for (const idea of ideas) {
@@ -1391,9 +1402,102 @@ function dateIdeasBox(ideas, label) {
     map.append(icon("fa-back"));
     row.append(text, map);
     box.append(row);
+    if (idea.perk) {
+      const perk = el("div", "d-perk"), use = el("button", "d-perk-use", "Use");
+      use.type = "button";
+      use.setAttribute("aria-label", `Use the perk at ${idea.name}: ${idea.perk}`);
+      use.addEventListener("click", () => openVoucher(idea, card));
+      perk.append(el("span", "", `✨ ${idea.perk}`), use);
+      box.append(perk);
+    }
   }
   return box;
 }
+
+// A pair perk, full screen: the spot, both faces, the perk, valid-until with a ticking clock (so staff can tell it's not a
+// screenshot), and Hold to redeem: held for 1.2 s, in front of staff, it gives way to the code with where and when.
+// A mockup like the spots: the code is made here from the pair and the spot, and a redeem is only remembered on this
+// page (a real one would be recorded per pair in Supabase, so each perk is used once)
+const redeemedPerks = new Map();   // code -> when it was redeemed
+function perkCode(idea, card) {
+  let h = 7;
+  for (const ch of `${card.matchId || card.tagId || card.first}|${idea.name}`) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+  return "NX-" + h.toString(36).toUpperCase().slice(-4).padStart(4, "0");
+}
+function closeVoucher() {
+  const v = document.querySelector(".d-voucher");
+  if (!v) return false;
+  clearInterval(v.clockTimer);
+  v.remove();
+  return true;
+}
+function openVoucher(idea, card) {
+  closeVoucher();
+  const code = perkCode(idea, card), until = new Date(Date.now() + 30 * 864e5);
+  const v = el("div", "d-voucher");
+  v.setAttribute("role", "dialog");
+  v.setAttribute("aria-modal", "true");
+  v.setAttribute("aria-label", `${idea.perk} at ${idea.name}`);
+  v.tabIndex = -1;
+  const x = el("button", "d-voucher-x", "✕");
+  x.type = "button";
+  x.setAttribute("aria-label", "Close");
+  x.addEventListener("click", closeVoucher);
+  v.addEventListener("click", e => { if (e.target === v) closeVoucher(); });
+
+  const hero = el("div", "d-vhero"), pair = el("div", "d-vpair"), them = el("div", "d-vface"), me = el("div", "d-vface");
+  photoOrInitial(them, card, "");
+  photoOrInitial(me, { first: document.getElementById("first").value.trim() || "You", photoURL: datingPhoto, tagId: "me" }, "");
+  pair.append(them, me);
+  hero.append(el("span", "d-vvenue", `${idea.emoji} ${idea.name}`), pair);
+
+  const body = el("div", "d-vbody"), clock = el("span", "d-vclock");
+  const valid = el("p", "d-vfine", `Valid until ${until.toLocaleDateString("en-SG", { day: "numeric", month: "short", year: "numeric" })} · `);
+  valid.append(clock);
+  const tick = () => { clock.textContent = new Date().toLocaleTimeString("en-SG", { hour12: false }); };
+  tick();
+  v.clockTimer = setInterval(tick, 1000);
+
+  const hold = el("button", "d-vhold"), note = el("p", "d-vfine", "Show staff, then hold. One use only.");
+  hold.type = "button";
+  hold.append(el("i"), el("span", "", "Hold to redeem"));
+  const done = el("div", "d-vdone"), when = el("p", "d-vfine");
+  done.append(el("p", "d-vdone-t", "✓ Redeemed"), el("div", "d-vcode", code), when);
+  const showDone = at => {
+    when.textContent = `${idea.name} · ${at.toLocaleDateString("en-SG", { day: "numeric", month: "short" })}, ` +
+                       at.toLocaleTimeString("en-SG", { hour: "2-digit", minute: "2-digit", hour12: false });
+    hold.hidden = note.hidden = true;
+    done.hidden = false;
+  };
+  done.hidden = true;
+  let timer = null;
+  const start = e => {
+    if (e.type === "keydown" && (e.repeat || (e.key !== " " && e.key !== "Enter"))) return;
+    e.preventDefault();
+    hold.classList.add("on");
+    timer = setTimeout(() => {
+      const at = new Date();
+      redeemedPerks.set(code, at);
+      try { navigator.vibrate?.(30); } catch (err) {}
+      showDone(at);
+    }, 1200);
+  };
+  const stop = () => { clearTimeout(timer); hold.classList.remove("on"); };
+  hold.addEventListener("pointerdown", start);
+  hold.addEventListener("keydown", start);
+  for (const type of ["pointerup", "pointerleave", "pointercancel", "keyup", "blur"]) hold.addEventListener(type, stop);
+  hold.addEventListener("contextmenu", e => e.preventDefault());   // a long press on a phone shouldn't open a menu
+  if (redeemedPerks.has(code)) showDone(redeemedPerks.get(code));
+
+  body.append(el("p", "d-vwho", `${card.first} & you · first date`), el("div", "d-vbanner", idea.perk), valid, hold, note, done);
+  const vcard = el("div", "d-vcard");
+  vcard.append(hero, body);
+  v.append(x, vcard);
+  document.body.append(v);
+  v.focus();
+}
+// Escape closes the voucher (only it: capture, before closeProfile's listener)
+window.addEventListener("keydown", e => { if (e.key === "Escape" && closeVoucher()) e.stopImmediatePropagation(); }, true);
 
 // Chips with the shared ones filled in
 function markedChips(items) {
@@ -1636,7 +1740,7 @@ function openProfile(card, mutual) {
     if (full.picks.length) body.append(el("p", "d-label", "Quick picks"), markedChips(full.picks));
     if (full.hobbies.length) body.append(el("p", "d-label", "Hobbies"), markedChips(full.hobbies));
     if ([...full.looking, ...full.picks, ...full.hobbies].some(x => x.both)) body.append(el("p", "d-hint d-legend", "Filled in: you both"));
-    if (DATE_IDEAS_LIVE || DEMO) body.append(dateIdeasBox(dateIdeas(card), "First date ideas"));
+    if (DATE_IDEAS_LIVE || DEMO) body.append(dateIdeasBox(dateIdeas(card), "First date ideas", card));
   } else if (hobbies.length) body.append(el("p", "d-label", "You both like"), chipsFor(hobbies));
   inner.append(photo, body);
   if (mutual) inner.append(card.handle ? copyHandle(card.handle) : el("p", "d-hint", "No handle left. Say hi next time!"));
@@ -1746,14 +1850,14 @@ function drawDating() {
     list.append(label);
     for (const c of done) {
       const li = el("li", "d-block d-mutual d-tap");
-      li.addEventListener("click", e => { if (!e.target.closest(".d-contact, .d-idea-map")) openProfile(c, true); });
+      li.addEventListener("click", e => { if (!e.target.closest(".d-contact, .d-idea-map, .d-perk")) openProfile(c, true); });
       const photo = el("div", "d-photo");
       photoOrInitial(photo, c, "d-initial");
       photo.append(el("span", "d-ribbon", "It's a match ♥"), el("span", "d-name", c.first));
       const { goal, hobbies } = datingWhy(c);
       const body = el("div", "d-body");
       body.append(el("p", "d-goal", goal), chipsFor(hobbies));
-      if (DATE_IDEAS_LIVE || DEMO) body.append(dateIdeasBox(dateIdeas(c).slice(0, 1), "First date idea"));
+      if (DATE_IDEAS_LIVE || DEMO) body.append(dateIdeasBox(dateIdeas(c).slice(0, 1), "First date idea", c));
       body.append(c.handle ? copyHandle(c.handle) : el("p", "d-hint", "No handle left. Say hi next time!"));
       li.append(photo, body);
       list.append(li);
@@ -2048,7 +2152,7 @@ document.addEventListener("touchstart", e => {
   if (t.clientX < 24 || t.clientX > window.innerWidth - 24) return;   // screen edges belong to the system back gesture
   // The action bar is for tapping; cropping and the match cards drag themselves; a full-screen reveal or profile
   // shouldn't switch the tab behind it
-  if (e.target.closest(".bar, .crop, .d-deck, .d-reveal, .d-profile")) return;
+  if (e.target.closest(".bar, .crop, .d-deck, .d-reveal, .d-profile, .d-voucher")) return;
   drag = { x: t.clientX, y: t.clientY, time: Date.now(), axis: null, dx: 0, el: currentPanel() };
 }, { passive: true });
 

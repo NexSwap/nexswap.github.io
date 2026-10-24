@@ -310,6 +310,47 @@
   .d-idea-map { flex: none; display: inline-flex; align-items: center; gap: 6px; min-height: 40px; padding: 0 12px; border-radius: 10px;
                 border: 1px solid var(--border); color: var(--text); font-size: 14px; font-weight: 600; text-decoration: none; }
   .d-idea-map svg { width: 12px; height: 12px; transform: rotate(135deg); }   /* the back arrow, turned to point out: ↗ */
+  /* A pair perk under a spot (dateIdeasBox), and its voucher (openVoucher): the spot, both faces, the perk, hold to redeem */
+  .d-perk { display: flex; align-items: center; gap: 8px; margin-top: 10px; padding: 8px 10px; border-radius: 10px;
+            background: linear-gradient(90deg, #f472b633, #ffc56b33); }
+  .d-perk span { flex: 1; min-width: 0; font-size: 13px; font-weight: 600; }
+  .d-perk-use { flex: none; min-height: 32px; padding: 0 14px; border: 0; border-radius: 999px; background: #ffc56b; color: #2a1438;
+                font-size: 13px; font-weight: 700; cursor: pointer; }
+  .d-voucher { position: fixed; inset: 0; z-index: 60; display: grid; place-items: center; padding: 24px 18px; overflow-y: auto;
+               background: #0d0a12f2; touch-action: pan-y; }
+  .d-voucher:focus { outline: none; }
+  .d-voucher-x { position: absolute; top: max(16px, env(safe-area-inset-top)); right: 16px; z-index: 1; width: 44px; height: 44px; border-radius: 50%;
+                 border: 1px solid var(--border); background: #00000066; color: var(--text); font-size: 16px; cursor: pointer; }
+  .d-vcard { width: 100%; max-width: 360px; overflow: hidden; border-radius: 22px; background: var(--surface); border: 1px solid #f472b688;
+             box-shadow: 0 0 40px #f472b633; text-align: center; }
+  .d-vhero { position: relative; height: 190px; background: linear-gradient(140deg, #862eaf, #f472b6, #ffc56b); }
+  .d-vvenue { position: absolute; top: 18px; left: 12px; right: 12px; font-size: 28px; font-weight: 800; text-shadow: 0 2px 12px #0006; }
+  .d-vpair { position: absolute; left: 50%; bottom: -36px; transform: translateX(-50%); display: flex; }
+  .d-vface { width: 78px; height: 78px; border-radius: 50%; border: 4px solid var(--surface); overflow: hidden; display: grid; place-items: center;
+             font-size: 28px; font-weight: 800; }
+  .d-vface + .d-vface { margin-left: -18px; }
+  .d-vface img { width: 100%; height: 100%; object-fit: cover; }
+  .d-vbody { padding: 46px 18px 18px; }
+  .d-vwho { margin: 0; font-weight: 700; }
+  .d-vbanner { margin: 10px 0 0; padding: 10px; border-radius: 12px; background: linear-gradient(90deg, #f472b6, #ffc56b); color: #2a1438;
+               font-size: 18px; font-weight: 800; }
+  .d-vfine { margin: 8px 0 0; color: var(--dim); font-size: 13px; }
+  .d-vclock { color: var(--text); font: 600 14px/1 ui-monospace, monospace; letter-spacing: .06em; }
+  .d-vhold { position: relative; width: 100%; min-height: 52px; margin-top: 16px; overflow: hidden; border-radius: 14px; border: 1.5px solid #ffc56b;
+             background: none; color: var(--text); font-size: 16px; font-weight: 700; cursor: pointer; user-select: none; -webkit-user-select: none;
+             -webkit-touch-callout: none; touch-action: none; }
+  .d-vhold i { position: absolute; inset: 0; width: 0; background: #ffc56b; }
+  .d-vhold.on i { width: 100%; transition: width 1.2s linear; }
+  .d-vhold.on { color: #2a1438; }
+  .d-vhold span { position: relative; }
+  .d-vdone { margin-top: 16px; padding: 14px 12px; border-radius: 14px; background: #3ddc8422; border: 1.5px solid var(--ok); }
+  .d-vdone-t { margin: 0; color: var(--ok); font: 13px/1.4 var(--pixel); letter-spacing: .08em; text-transform: uppercase; }
+  .d-vcode { margin: 6px 0 4px; font: 700 34px/1.1 ui-monospace, monospace; letter-spacing: .14em; }
+  @media (prefers-reduced-motion: no-preference) {
+    .d-voucher { animation: d-fadein .2s ease-out; }
+    .d-vdone { animation: d-redeem .35s ease-out; }
+  }
+  @keyframes d-redeem { from { transform: scale(.92); opacity: 0; } to { transform: none; opacity: 1; } }
   .d-contact .d-handle { flex: 1; min-width: 0; }
   .d-open { flex: none; min-height: 52px; padding: 0 16px; border-radius: 14px; background: var(--accent); color: var(--text); font-size: 16px;
             font-weight: 700; text-decoration: none; display: flex; align-items: center; gap: 8px; }
