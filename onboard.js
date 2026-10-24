@@ -1504,7 +1504,10 @@ function showReveals(cards) {
     next.addEventListener("click", () => { i++; one(); });
     r.append(next);
     document.body.append(r);
-    next.focus();
+    // Focus the reveal, not its button: screen readers announce it and Tab reaches the button, but a focus moved here
+    // (not by a key) would draw the button's keyboard ring on a phone
+    r.tabIndex = -1;
+    r.focus();
   };
   one();
 }
@@ -1996,7 +1999,9 @@ document.addEventListener("touchstart", e => {
   if (e.touches.length !== 1 || busy) return;
   const t = e.touches[0];
   if (t.clientX < 24 || t.clientX > window.innerWidth - 24) return;   // screen edges belong to the system back gesture
-  if (e.target.closest(".bar, .crop")) return;                         // the action bar is for tapping; cropping drags
+  // The action bar is for tapping; cropping and the match cards drag themselves; a full-screen reveal or profile
+  // shouldn't switch the tab behind it
+  if (e.target.closest(".bar, .crop, .d-deck, .d-reveal, .d-profile")) return;
   drag = { x: t.clientX, y: t.clientY, time: Date.now(), axis: null, dx: 0, el: currentPanel() };
 }, { passive: true });
 

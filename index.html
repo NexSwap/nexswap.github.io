@@ -331,6 +331,7 @@
   /* The reveal: once per mutual Bae on this phone, full screen */
   .d-reveal { position: fixed; inset: 0; z-index: 50; display: flex; flex-direction: column; align-items: center; justify-content: center;
               padding: 28px 22px; text-align: center; background: radial-gradient(circle at 50% 38%, #862eaf66, transparent 60%), #0d0a12fa; }
+  .d-reveal:focus { outline: none; }   /* focused when it opens (showReveals), not something to point at */
   .d-reveal .kicker { font: 12px/1.4 var(--pixel); letter-spacing: .1em; text-transform: uppercase; color: #d6b4ec; margin: 0 0 6px; }
   .d-reveal h2 { font-size: 34px; margin: 0 0 22px; }
   .d-reveal .face { width: 210px; height: 210px; border-radius: 50%; display: grid; place-items: center; font-size: 80px; font-weight: 800;
