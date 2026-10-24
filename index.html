@@ -298,6 +298,18 @@
   .d-handle svg, .d-open svg { width: 18px; height: 18px; flex: none; }
   /* The handle to copy, and beside it Open (the app, on their profile or chat) when it says which app */
   .d-contact { display: flex; gap: 8px; width: 100%; }
+  /* First-date spots (dateIdeasBox): the first one on a mutual Bae's card, up to 3 in their profile */
+  .d-idea { background: var(--surface-2); border: 1px solid var(--border); border-radius: 14px; padding: 10px 12px; margin: 0 0 12px; }
+  .d-idea .d-label { margin: 0 0 6px; }
+  .d-idea-row { display: flex; align-items: center; gap: 10px; }
+  .d-idea-row + .d-idea-row { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--border); }
+  .d-idea-text { flex: 1; min-width: 0; display: grid; gap: 2px; }
+  .d-idea-text strong { font-size: 15px; }
+  .d-idea-where { color: var(--dim); font-size: 13px; }
+  .d-idea-why { color: #d6b4ec; font-size: 13px; font-weight: 600; }
+  .d-idea-map { flex: none; display: inline-flex; align-items: center; gap: 6px; min-height: 40px; padding: 0 12px; border-radius: 10px;
+                border: 1px solid var(--border); color: var(--text); font-size: 14px; font-weight: 600; text-decoration: none; }
+  .d-idea-map svg { width: 12px; height: 12px; transform: rotate(135deg); }   /* the back arrow, turned to point out: ↗ */
   .d-contact .d-handle { flex: 1; min-width: 0; }
   .d-open { flex: none; min-height: 52px; padding: 0 16px; border-radius: 14px; background: var(--accent); color: var(--text); font-size: 16px;
             font-weight: 700; text-decoration: none; display: flex; align-items: center; gap: 8px; }
@@ -323,6 +335,8 @@
   .d-vote .nay.on { background: #c2566a; border-color: #e07a8c; }
   .d-profile .d-hint { padding: 0 20px; }
   .d-profile .d-contact { margin: 18px 20px 0; width: calc(100% - 40px); }
+  .d-profile .d-idea { margin: 18px 0 0; }
+  .d-profile .d-idea .d-label { margin: 0 0 6px; }
   .d-tap { cursor: pointer; }
   .d-chips.marked span { background: var(--surface-2); border-color: var(--border); color: var(--text); }
   .d-chips.marked span.both { background: var(--accent); border-color: var(--accent-hi); color: #fff; }

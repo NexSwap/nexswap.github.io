@@ -66,6 +66,36 @@ const HD_BLURBS = ["starts things", "steady energy, responds to what comes", "fa
 // only this page has it (sim/proximity_sim.cpp copies it for --profiles dating). Projectors guide Generators and
 // Manifesting Generators; Manifestors start things those two respond to; Reflectors sample everyone.
 const HD_PAIRS = [0b00110, 0b01001, 0b01001, 0b00110, 0b01111];
+// First-date spots for mutual Baes (dateIdeas), from what both picked. A mockup: shown on the demo only (?demo=1) until
+// venues sign up as partners with a perk for matched pairs (bizdev tracker, "Date partners (SG)"), then
+// DATE_IDEAS_LIVE. By DATING_INTERESTS bit: [emoji, name, kind, area ("" = a chain: Maps finds the nearest), and
+// true for a free public place (a park, a beach), which can't be a partner and so comes after the venues], several for
+// some, none where there's no natural date spot; a reason line each
+const DATE_IDEAS_LIVE = false;
+const DATE_SPOTS = {
+  0: [["🏃", "MacRitchie Reservoir", "Trail run", "Thomson", true]], 1: [["🥾", "Henderson Waves", "Southern Ridges walk", "Telok Blangah", true]],
+  4: [["🧗", "Boulder Movement", "Bouldering", "Bugis"], ["🧗", "fit · bloc", "Bouldering", "Kent Ridge"]],
+  5: [["🚲", "East Coast Park", "Bike rental", "East Coast", true]], 7: [["🍳", "Palate Sensations", "Cooking class", "Buona Vista"]],
+  8: [["🥞", "Wild Honey", "Brunch", "Orchard"], ["🥐", "Tiong Bahru Bakery", "Brunch", "Tiong Bahru"]],
+  9: [["☕", "Apartment Coffee", "Café", "Selegie Rd"], ["☕", "Nylon Coffee Roasters", "Café", "Everton Park"]],
+  10: [["🍷", "Le Bon Funk", "Wine bar", "Club St"]], 11: [["✈️", "Jewel Changi", "Rain Vortex", "Changi", true]],
+  12: [["🏖️", "Tanjong Beach", "Beach", "Sentosa", true]], 13: [["🎶", "Esplanade Outdoor Theatre", "Free shows Fri–Sun", "Marina Bay", true]],
+  14: [["🎤", "Teo Heng KTV", "Karaoke", ""]], 15: [["🎬", "Golden Village", "Cinema", ""]], 16: [["🕹️", "Timezone", "Arcade", "Plaza Singapura"]],
+  17: [["🎲", "Settlers Cafe", "Board game café", "Clarke Quay"]], 18: [["📚", "Kinokuniya", "Bookshop", "Ngee Ann City"]],
+  19: [["🎨", "National Gallery Singapore", "Art museum", "City Hall"], ["🎨", "ArtScience Museum", "Museum", "Marina Bay"]],
+  20: [["📷", "Supertree Grove", "Gardens by the Bay", "Marina Bay", true]], 22: [["🌿", "Singapore Botanic Gardens", "Garden walk", "Tanglin", true]],
+  24: [["🥐", "Tiong Bahru Bakery", "Morning pastries", "Tiong Bahru"]], 25: [["🌙", "Jigger & Pony", "Late-night cocktails", "Tanjong Pagar"]],
+  26: [["🐶", "Surrey Hills Grocer", "Dog-friendly café", "Holland Village"]], 27: [["🐱", "Catmosphere Cat Cafe", "Cat café", "Desker Rd"]],
+  29: [["🍸", "Atlas", "Cocktail bar", "Bugis"], ["🍸", "Jigger & Pony", "Cocktail bar", "Tanjong Pagar"]],
+};
+DATE_SPOTS[28] = DATE_SPOTS[9];   // a coffee date: the cafés
+const DATE_REASONS = { 0: "You both run", 1: "You both hike", 4: "You both climb", 5: "You both cycle", 7: "You both cook",
+  8: "You both love brunch", 9: "You both love coffee", 10: "You both like wine", 11: "You both love to travel",
+  12: "You both love the beach", 13: "You both love live music", 14: "You both sing", 15: "You both love movies",
+  16: "You both game", 17: "You both play board games", 18: "You both read", 19: "You both love art",
+  20: "You both take photos", 22: "You both like slowing down", 24: "You're both early birds", 25: "You're both night owls",
+  26: "You're both dog people", 27: "You're both cat people", 28: "You both like coffee dates", 29: "You both like drinks dates" };
+const DATE_FALLBACK = [["☕", "Apartment Coffee", "Café", "Selegie Rd"], ["🌳", "Gardens by the Bay", "Gardens", "Marina Bay", true]];
 const IAM = ["Woman", "Man", "Non-binary", "Prefer not to say"];   // "who" bits 0-1: 1, 2, 3, 0
 const OPEN = ["Women", "Men", "Non-binary people"];                // "who" bits 2-4 (none = everyone)
 // Must match include/Proximity.c in the tag firmware
@@ -1318,6 +1348,52 @@ function datingProfileOf(card) {
   return out;
 }
 
+// Up to 3 first-date spots from what you both picked (DATE_SPOTS): one per shared pick or hobby, no place twice; venues
+// before free public places, then quick picks before hobbies. Where a pick has several spots, which one comes from the
+// shared picks alone, so both of you see the same. Nothing shared (or nothing with a spot): a classic one.
+function dateIdeas(card) {
+  const full = datingProfileOf(card);
+  const bits = [...full.picks, ...full.hobbies].filter(x => x.both).map(x => DATING_INTERESTS.indexOf(x.label)).filter(b => b >= 0);
+  const seed = bits.reduce((m, b) => (m | (1 << b)) >>> 0, 0);
+  let ideas = [];
+  const seen = new Set();
+  for (const b of bits) {
+    const spots = DATE_SPOTS[b];
+    if (!spots) continue;
+    const [emoji, name, kind, area, free] = spots[(seed + b) % spots.length];
+    if (seen.has(name)) continue;
+    seen.add(name);
+    ideas.push({ emoji, name, kind, area, free: !!free, why: DATE_REASONS[b] });
+  }
+  ideas = [...ideas.filter(x => !x.free), ...ideas.filter(x => x.free)];   // (in order within each)
+  if (!ideas.length) {
+    const [emoji, name, kind, area] = DATE_FALLBACK[seed % DATE_FALLBACK.length];
+    ideas.push({ emoji, name, kind, area, why: "A classic first date" });
+  }
+  return ideas.slice(0, 3);
+}
+
+// A box of first-date spots, each with a Google Maps search (phones open the Maps app)
+function dateIdeasBox(ideas, label) {
+  const box = el("div", "d-idea");
+  box.append(el("p", "d-label", label));
+  for (const idea of ideas) {
+    const row = el("div", "d-idea-row"), text = el("div", "d-idea-text");
+    text.append(el("strong", "", `${idea.emoji} ${idea.name}`), el("span", "d-idea-where", `${idea.kind} · ${idea.area || "nearest outlet"}`),
+                el("span", "d-idea-why", idea.why));
+    const map = el("a", "d-idea-map", "Map");
+    map.href = "https://www.google.com/maps/search/?api=1&query=" +
+               encodeURIComponent([idea.name, idea.area, "Singapore"].filter(Boolean).join(", "));
+    map.target = "_blank";
+    map.rel = "noopener";
+    map.setAttribute("aria-label", `${idea.name} on Google Maps`);
+    map.append(icon("fa-back"));
+    row.append(text, map);
+    box.append(row);
+  }
+  return box;
+}
+
 // Chips with the shared ones filled in
 function markedChips(items) {
   const chips = el("div", "d-chips marked");
@@ -1559,6 +1635,7 @@ function openProfile(card, mutual) {
     if (full.picks.length) body.append(el("p", "d-label", "Quick picks"), markedChips(full.picks));
     if (full.hobbies.length) body.append(el("p", "d-label", "Hobbies"), markedChips(full.hobbies));
     if ([...full.looking, ...full.picks, ...full.hobbies].some(x => x.both)) body.append(el("p", "d-hint d-legend", "Filled in: you both"));
+    if (DATE_IDEAS_LIVE || DEMO) body.append(dateIdeasBox(dateIdeas(card), "First date ideas"));
   } else if (hobbies.length) body.append(el("p", "d-label", "You both like"), chipsFor(hobbies));
   inner.append(photo, body);
   if (mutual) inner.append(card.handle ? copyHandle(card.handle) : el("p", "d-hint", "No handle left. Say hi next time!"));
@@ -1668,14 +1745,15 @@ function drawDating() {
     list.append(label);
     for (const c of done) {
       const li = el("li", "d-block d-mutual d-tap");
-      li.addEventListener("click", e => { if (!e.target.closest(".d-contact")) openProfile(c, true); });
+      li.addEventListener("click", e => { if (!e.target.closest(".d-contact, .d-idea-map")) openProfile(c, true); });
       const photo = el("div", "d-photo");
       photoOrInitial(photo, c, "d-initial");
       photo.append(el("span", "d-ribbon", "It's a match ♥"), el("span", "d-name", c.first));
       const { goal, hobbies } = datingWhy(c);
       const body = el("div", "d-body");
-      body.append(el("p", "d-goal", goal), chipsFor(hobbies),
-                  c.handle ? copyHandle(c.handle) : el("p", "d-hint", "No handle left. Say hi next time!"));
+      body.append(el("p", "d-goal", goal), chipsFor(hobbies));
+      if (DATE_IDEAS_LIVE || DEMO) body.append(dateIdeasBox(dateIdeas(c).slice(0, 1), "First date idea"));
+      body.append(c.handle ? copyHandle(c.handle) : el("p", "d-hint", "No handle left. Say hi next time!"));
       li.append(photo, body);
       list.append(li);
     }
