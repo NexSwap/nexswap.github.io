@@ -1407,8 +1407,9 @@ function dragCard(node, card) {
     if (x0 === null) return;
     x0 = null;
     const [t0, xA] = last[0], v = (e.clientX - xA) / Math.max(1, e.timeStamp - t0);
-    const flick = Math.abs(v) > 0.6 && Math.abs(dx) > 30;
-    if (Math.abs(dx) < 6 && e.timeStamp - last[0][0] < 500 && last.length < 5) {   // a tap, not a drag
+    // Cancelled: the browser took the touch to scroll the page (or the system took it), so neither a tap nor a swipe
+    const flick = e.type !== "pointercancel" && Math.abs(v) > 0.6 && Math.abs(dx) > 30;
+    if (e.type !== "pointercancel" && Math.abs(dx) < 6 && e.timeStamp - last[0][0] < 500 && last.length < 5) {   // a tap, not a drag
       node.style.transform = "";
       return openProfile(card, false);
     }
@@ -1929,7 +1930,8 @@ button.addEventListener("click", async () => {
 });
 
 // ---------- swipe between pages ----------
-// Wizard, How it works and Wi-Fi cards: left = next, right = previous (never sends). Otherwise: left/right switches the two tabs.
+// Left/right switches the two tabs, from anywhere on them: the form's steps and the How it works and Wi-Fi cards move
+// with the bar's Back and Next. The match cards to decide swipe on their own (dragCard), for Bae or Nay.
 function slideIn(el, fromRight) {
   if (!el) return;
   el.classList.remove("from-right", "from-left");
@@ -1939,26 +1941,6 @@ function slideIn(el, fromRight) {
 
 function swipe(direction) {
   const next = direction === "left";
-  if (activeTab === "profile" && mode === "howto") { howtoGo(next); return; }
-  if (activeTab === "profile" && mode === "wifi") { wifiGo(next); return; }
-  if (activeTab === "profile" && mode === "wizard") {
-    if (next && step < 3) {
-      if (step === 1 && !document.getElementById("first").value.trim()) {
-        setStatus("Add your first name to continue.", "err");
-        return;
-      }
-      setStatus("");
-      step++;
-    } else if (!next && step > 1) {
-      step--;
-    } else {
-      return;
-    }
-    render();
-    window.scrollTo(0, 0);
-    slideIn(document.querySelector(`.step[data-step="${step}"]`), next);
-    return;
-  }
   if (next && activeTab === "profile") activeTab = "matches";
   else if (!next && activeTab === "matches") activeTab = "profile";
   else return;
@@ -1967,23 +1949,14 @@ function swipe(direction) {
   slideIn(document.getElementById(activeTab === "profile" ? "view-profile" : "matches-section"), next);
 }
 
-// Can we move in this direction from here? (Step 1 without a name is handled by swipe() with a message.)
+// Can we move in this direction from here? (My profile is on the left, Matches on the right)
 function canSwipe(direction) {
   const next = direction === "left";
-  if (activeTab === "profile" && mode === "howto") return next ? howtoStep < 4 : howtoStep > 1;
-  if (activeTab === "profile" && mode === "wifi") return next ? wifiStep < 3 : wifiStep > 1;
-  if (activeTab === "profile" && mode === "wizard") {
-    if (next && step === 1 && !document.getElementById("first").value.trim()) return false;   // rubber-band + message
-    return next ? step < 3 : step > 1;
-  }
   return next ? activeTab === "profile" : activeTab === "matches";
 }
 
-// The element that moves under the finger: the current wizard step or card, or the whole tab
+// The element that moves under the finger: the whole tab
 function currentPanel() {
-  if (activeTab === "profile" && mode === "howto") return document.querySelector(`.howto-step[data-howto="${howtoStep}"]`);
-  if (activeTab === "profile" && mode === "wifi") return document.querySelector(`.wifi-step[data-wifi="${wifiStep}"]`);
-  if (activeTab === "profile" && mode === "wizard") return document.querySelector(`.step[data-step="${step}"]`);
   return document.getElementById(activeTab === "profile" ? "view-profile" : "matches-section");
 }
 
