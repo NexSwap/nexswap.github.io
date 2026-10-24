@@ -1390,7 +1390,7 @@ function dateIdeasBox(ideas, label, card) {
   const box = el("div", "d-idea");
   box.append(el("p", "d-label", label));
   for (const idea of ideas) {
-    const row = el("div", "d-idea-row"), text = el("div", "d-idea-text");
+    const spot = el("div", "d-idea-spot"), row = el("div", "d-idea-row"), text = el("div", "d-idea-text");   // a spot: the place, then its perk
     text.append(el("strong", "", `${idea.emoji} ${idea.name}`), el("span", "d-idea-where", `${idea.kind} · ${idea.area || "nearest outlet"}`),
                 el("span", "d-idea-why", idea.why));
     const map = el("a", "d-idea-map", "Map");
@@ -1401,14 +1401,15 @@ function dateIdeasBox(ideas, label, card) {
     map.setAttribute("aria-label", `${idea.name} on Google Maps`);
     map.append(icon("fa-back"));
     row.append(text, map);
-    box.append(row);
+    spot.append(row);
+    box.append(spot);
     if (idea.perk) {
       const perk = el("div", "d-perk"), use = el("button", "d-perk-use", "Use");
       use.type = "button";
       use.setAttribute("aria-label", `Use the perk at ${idea.name}: ${idea.perk}`);
       use.addEventListener("click", () => openVoucher(idea, card));
       perk.append(el("span", "", `✨ ${idea.perk}`), use);
-      box.append(perk);
+      spot.append(perk);
     }
   }
   return box;
@@ -1685,6 +1686,7 @@ function showReveals(cards) {
     next.type = "button";
     next.addEventListener("click", () => { i++; one(); });
     r.append(next);
+    swipeAway(r, () => { i++; one(); });
     document.body.append(r);
     // Focus the reveal, not its button: screen readers announce it and Tab reaches the button, but a focus moved here
     // (not by a key) would draw the button's keyboard ring on a phone
@@ -1692,6 +1694,48 @@ function showReveals(cards) {
     r.focus();
   };
   one();
+}
+
+// A reveal follows a sideways drag: let go past the threshold (or flick) and it slides off to the next one, as
+// "Next match" does; otherwise it springs back
+function swipeAway(sheet, done) {
+  let start = null;
+  const back = () => {
+    sheet.style.transition = "transform .2s ease-out, opacity .2s ease-out";
+    sheet.style.transform = "";
+    sheet.style.opacity = "";
+  };
+  sheet.addEventListener("touchstart", e => {
+    const t = e.touches[0];
+    start = e.touches.length === 1 && t.clientX >= 24 && t.clientX <= window.innerWidth - 24   // edges: system back
+      ? { x: t.clientX, y: t.clientY, time: Date.now(), axis: null, dx: 0 } : null;
+  }, { passive: true });
+  sheet.addEventListener("touchmove", e => {
+    if (!start) return;
+    const t = e.touches[0], dx = t.clientX - start.x, dy = t.clientY - start.y;
+    if (!start.axis) {
+      if (Math.abs(dx) < 10 && Math.abs(dy) < 10) return;
+      start.axis = Math.abs(dx) > Math.abs(dy) * 1.2 ? "x" : "y";
+    }
+    if (start.axis !== "x") return;
+    start.dx = dx;
+    sheet.style.transition = "none";
+    sheet.style.transform = `translateX(${dx}px)`;
+    sheet.style.opacity = String(1 - Math.min(Math.abs(dx) / window.innerWidth, 1) * 0.6);
+  }, { passive: true });
+  sheet.addEventListener("touchend", () => {
+    if (!start || start.axis !== "x") { start = null; return; }
+    const { dx, time } = start;
+    start = null;
+    if (Math.abs(dx) < 80 && !(Math.abs(dx) > 30 && Date.now() - time < 250)) { back(); return; }
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) { done(); return; }
+    sheet.style.pointerEvents = "none";                  // no second "Next match" while it slides off
+    sheet.style.transition = "transform .18s ease-in, opacity .18s ease-in";
+    sheet.style.transform = `translateX(${dx < 0 ? "-100%" : "100%"})`;
+    sheet.style.opacity = "0";
+    setTimeout(done, 180);
+  }, { passive: true });
+  sheet.addEventListener("touchcancel", () => { if (start) back(); start = null; }, { passive: true });
 }
 
 // A match's profile, full screen, from a tap on them anywhere on the Matches page: their photo, what you share, and Bae
