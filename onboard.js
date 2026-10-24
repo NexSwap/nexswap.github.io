@@ -247,31 +247,90 @@ loadForm();
 document.getElementById("form").addEventListener("change", saveForm);
 
 // ---------- dating photo (optional) ----------
-// Made here, before it's saved: the middle square of the picture, 320 x 320, as a JPEG small enough for the account
-// (at most 100,000 characters, dating.profiles in schema.sql). Drawing it again drops its location and camera details.
-// Read as a data URL rather than a blob: link, which the page's content policy doesn't allow.
-function makePhoto(file) {
+// The picture, read as a data URL rather than a blob: link, which the page's content policy doesn't allow
+function loadPicture(file) {
   return new Promise((ok, fail) => {
     const reader = new FileReader();
     reader.onerror = () => fail(new Error("couldn't read the file"));
     reader.onload = () => {
       const img = new Image();
       img.onerror = () => fail(new Error("not a picture this phone can open"));
-      img.onload = () => {
-        const side = Math.min(img.naturalWidth, img.naturalHeight), size = 320;
-        const canvas = document.createElement("canvas");
-        canvas.width = canvas.height = size;
-        canvas.getContext("2d").drawImage(img, (img.naturalWidth - side) / 2, (img.naturalHeight - side) / 2, side, side,
-                                          0, 0, size, size);
-        for (const quality of [0.82, 0.7, 0.55, 0.4]) {
-          const url = canvas.toDataURL("image/jpeg", quality);
-          if (url.startsWith("data:image/jpeg;base64,") && url.length <= 95000) return ok(url);
-        }
-        fail(new Error("too big"));
-      };
+      img.onload = () => ok(img);
       img.src = reader.result;
     };
     reader.readAsDataURL(file);
+  });
+}
+
+// Made here, before it's saved: the square chosen in cropPhoto, 320 x 320, as a JPEG small enough for the account
+// (at most 100,000 characters, dating.profiles in schema.sql). Drawing it again drops its location and camera details.
+function makePhoto(img, { sx, sy, side }) {
+  const size = 320;
+  const canvas = document.createElement("canvas");
+  canvas.width = canvas.height = size;
+  canvas.getContext("2d").drawImage(img, sx, sy, side, side, 0, 0, size, size);
+  for (const quality of [0.82, 0.7, 0.55, 0.4]) {
+    const url = canvas.toDataURL("image/jpeg", quality);
+    if (url.startsWith("data:image/jpeg;base64,") && url.length <= 95000) return url;
+  }
+  throw new Error("too big");
+}
+
+// The picture in a square to drag and zoom (pinch, the slider or a mouse wheel), full screen. Resolves with the square
+// kept, in the picture's own pixels, or null for Cancel (or Escape). It starts as the middle square, fitted.
+function cropPhoto(img) {
+  return new Promise(done => {
+    const box = document.getElementById("crop"), frame = document.getElementById("crop-frame");
+    const view = document.getElementById("crop-img"), slider = document.getElementById("crop-zoom");
+    const w = img.naturalWidth, h = img.naturalHeight, MAX_ZOOM = 4;
+    box.hidden = false;
+    const F = frame.clientWidth, fit = F / Math.min(w, h);   // the square's side on screen; the scale that fills it
+    let zoom = 1, x = (F - w * fit) / 2, y = (F - h * fit) / 2;   // the picture's top left corner, in the square
+    view.src = img.src;
+    view.style.width = w + "px"; view.style.height = h + "px";
+    // Never a gap: the picture always covers the square
+    const draw = () => {
+      const s = fit * zoom;
+      x = Math.min(0, Math.max(F - w * s, x)); y = Math.min(0, Math.max(F - h * s, y));
+      view.style.transform = `translate(${x}px, ${y}px) scale(${s})`;
+      slider.value = zoom;
+    };
+    // Zoom keeping the point (cx, cy) of the square still: the middle, or between the fingers or under the mouse
+    const zoomTo = (z, cx = F / 2, cy = F / 2) => {
+      z = Math.min(MAX_ZOOM, Math.max(1, z));
+      x = cx - (cx - x) * z / zoom; y = cy - (cy - y) * z / zoom; zoom = z;
+      draw();
+    };
+    const at = e => { const r = frame.getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top]; };
+    const fingers = new Map();   // pointer id -> where it is in the square
+    let spread = 0;              // two fingers: how far apart they were last time
+    const stop = new AbortController(), opts = { signal: stop.signal };
+    frame.addEventListener("pointerdown", e => { frame.setPointerCapture(e.pointerId); fingers.set(e.pointerId, at(e)); spread = 0; }, opts);
+    frame.addEventListener("pointermove", e => {
+      if (!fingers.has(e.pointerId)) return;
+      const [px, py] = fingers.get(e.pointerId), p = at(e);
+      fingers.set(e.pointerId, p);
+      if (fingers.size === 1) { x += p[0] - px; y += p[1] - py; draw(); return; }
+      const [a, b] = fingers.values(), d = Math.hypot(a[0] - b[0], a[1] - b[1]);
+      if (spread) zoomTo(zoom * d / spread, (a[0] + b[0]) / 2, (a[1] + b[1]) / 2);
+      spread = d;
+    }, opts);
+    for (const type of ["pointerup", "pointercancel"]) frame.addEventListener(type, e => { fingers.delete(e.pointerId); spread = 0; }, opts);
+    frame.addEventListener("wheel", e => { e.preventDefault(); zoomTo(zoom * Math.exp(-e.deltaY / 300), ...at(e)); }, { ...opts, passive: false });
+    slider.max = MAX_ZOOM;
+    slider.addEventListener("input", () => zoomTo(+slider.value), opts);
+    const finish = keep => {
+      stop.abort();
+      box.hidden = true;
+      view.removeAttribute("src");
+      const s = fit * zoom;
+      done(keep ? { sx: -x / s, sy: -y / s, side: F / s } : null);
+    };
+    document.getElementById("crop-done").addEventListener("click", () => finish(true), opts);
+    document.getElementById("crop-cancel").addEventListener("click", () => finish(false), opts);
+    document.addEventListener("keydown", e => { if (e.key === "Escape") finish(false); }, opts);
+    draw();
+    document.getElementById("crop-done").focus();
   });
 }
 
@@ -284,15 +343,17 @@ function showAvatar() {
   if (src) avatar.src = src;
 }
 
-// The form's preview: the photo, or the first letter of the name
+// The form's preview, as matches see it: the photo with the first name over it, or "Add a photo"
 function showPhoto() {
   showAvatar();
-  const preview = document.getElementById("photo-preview");
-  if (datingPhoto) {
-    const img = document.createElement("img");
-    img.src = datingPhoto; img.alt = "";
-    preview.replaceChildren(img);
-  } else preview.textContent = (document.getElementById("first").value || "?").slice(0, 1).toUpperCase();
+  const img = document.getElementById("photo-img"), name = document.getElementById("photo-name");
+  if (datingPhoto) img.src = datingPhoto;
+  else img.removeAttribute("src");
+  name.textContent = document.getElementById("first").value.trim();
+  document.getElementById("photo-tile").classList.toggle("has", !!datingPhoto);
+  img.hidden = name.hidden = !datingPhoto;
+  document.getElementById("photo-add").hidden = !!datingPhoto;
+  document.getElementById("photo-pick").textContent = datingPhoto ? "Change photo" : "Choose a photo";
   document.getElementById("photo-remove").hidden = !datingPhoto;
 }
 
@@ -303,7 +364,10 @@ const usePhoto = async e => {
   e.target.value = "";                         // the same file can be picked again
   if (!file) return;
   try {
-    datingPhoto = await makePhoto(file);
+    const img = await loadPicture(file);
+    const square = await cropPhoto(img);
+    if (!square) return;                       // cancelled: keep the photo there was
+    datingPhoto = makePhoto(img, square);
     photoChanged = true;
     setStatus("");
   } catch (err) {
@@ -321,7 +385,51 @@ document.getElementById("photo-remove").addEventListener("click", () => {
   showPhoto();
   saveForm();
 });
-document.getElementById("first").addEventListener("input", () => { if (!datingPhoto) showPhoto(); });
+document.getElementById("first").addEventListener("input", showPhoto);
+
+// ---------- dating handle (optional) ----------
+// One handle, Instagram or Telegram, saved with the app it's for ("ig:name" or "tg:name", in #handle) so a mutual Bae
+// gets a link that opens the app (copyHandle). One saved before that ("@name") still shows, to copy only.
+const HANDLE_APPS = {
+  ig: { name: "Instagram", url: "https://instagram.com/", ok: /^[A-Za-z0-9._]{1,30}$/,
+        rule: "Instagram usernames are up to 30 letters, numbers, dots and underscores." },
+  tg: { name: "Telegram", url: "https://t.me/", ok: /^[A-Za-z0-9_]{5,32}$/,
+        rule: "Telegram usernames are 5 to 32 letters, numbers and underscores." },
+};
+const HANDLE_HINT = "Paste your profile link or type your username. Only people you both say Bae to see it, after the event. " +
+                    "Never on your tag. Needs sign-in.";
+function parseHandle(handle) {
+  const m = /^(ig|tg):(.+)$/.exec(handle || "");
+  return m ? { app: m[1], name: m[2] } : { app: "", name: (handle || "").replace(/^@/, "") };
+}
+const handleName = document.getElementById("handle-name"), handleHint = document.getElementById("handle-hint");
+const handleApp = () => document.querySelector('input[name="handle-app"]:checked').value;
+const pickHandleApp = app => { document.querySelector(`input[name="handle-app"][value="${app}"]`).checked = true; };
+
+// What was typed or pasted, tidied: a profile link becomes its username (and picks the app); "@" and spaces go.
+// A username that can't be right says so in the hint, but never stops Next.
+function syncHandle() {
+  let text = handleName.value.trim();
+  const link = /^(?:https?:\/\/)?(?:www\.)?(instagram\.com|t\.me|telegram\.me)\/([^/?#\s]+)/i.exec(text);
+  if (link) { text = link[2]; pickHandleApp(/^instagram/i.test(link[1]) ? "ig" : "tg"); }
+  text = text.replace(/\s+/g, "").replace(/^@+/, "");
+  if (text !== handleName.value) handleName.value = text;
+  const app = handleApp(), bad = !!text && !HANDLE_APPS[app].ok.test(text);
+  document.getElementById("handle").value = text ? `${app}:${text}` : "";
+  handleHint.textContent = bad ? HANDLE_APPS[app].rule : HANDLE_HINT;
+  handleHint.classList.toggle("bad", bad);
+}
+// The saved handle back into the app switch and the box (after loadForm)
+function showHandle() {
+  const { app, name } = parseHandle(document.getElementById("handle").value);
+  if (app) pickHandleApp(app);
+  handleName.value = name;
+  handleHint.textContent = HANDLE_HINT;
+  handleHint.classList.remove("bad");
+}
+handleName.addEventListener("input", syncHandle);
+document.querySelectorAll('input[name="handle-app"]').forEach(r => r.addEventListener("change", syncHandle));
+showHandle();
 
 // The most choices a profile may have (Taxonomy.h MAX_INTERESTS / MAX_GOALS, sim/regress.py checks they agree): a tag
 // refuses more, and other tags ignore a tag with more, so nobody matches everyone by ticking everything. The other
@@ -1327,17 +1435,34 @@ function roundButton(cls, iconId, label, onClick) {
   return b;
 }
 
+// A mutual Bae's handle to copy, and Open beside it when it says which app (parseHandle): Instagram on their profile,
+// Telegram on a chat with them (phones open these links in the app)
 function copyHandle(handle) {
+  const { app, name } = parseHandle(handle), shown = app ? "@" + name : handle;
+  const canOpen = !!app && HANDLE_APPS[app].ok.test(name), copy = canOpen ? "Copy" : "Tap to copy";   // (room for Open)
+  const row = el("div", "d-contact");
   const b = el("button", "d-handle");
   b.type = "button";
-  const hint = el("small", "", "Tap to copy");
-  b.append(el("span", "", handle), hint);
+  const label = el("span", ""), hint = el("small", "", copy);
+  if (app) label.append(icon(`app-${app}`));
+  label.append(el("span", "", shown));
+  b.append(label, hint);
   b.addEventListener("click", async () => {
-    try { await navigator.clipboard.writeText(handle); hint.textContent = "Copied"; }
+    try { await navigator.clipboard.writeText(shown); hint.textContent = "Copied"; }
     catch (e) { hint.textContent = "Couldn't copy"; }
-    setTimeout(() => { hint.textContent = "Tap to copy"; }, 1600);
+    setTimeout(() => { hint.textContent = copy; }, 1600);
   });
-  return b;
+  row.append(b);
+  if (canOpen) {
+    const open = el("a", "d-open", "Open");
+    open.href = HANDLE_APPS[app].url + encodeURIComponent(name);
+    open.target = "_blank";
+    open.rel = "noopener";
+    open.setAttribute("aria-label", `Open in ${HANDLE_APPS[app].name}`);
+    open.append(icon("fa-back"));
+    row.append(open);
+  }
+  return row;
 }
 
 function seenKey(card) { return `${card.tagId}|${card.savedAt}`; }
@@ -1539,7 +1664,7 @@ function drawDating() {
     list.append(label);
     for (const c of done) {
       const li = el("li", "d-block d-mutual d-tap");
-      li.addEventListener("click", e => { if (!e.target.closest(".d-handle")) openProfile(c, true); });
+      li.addEventListener("click", e => { if (!e.target.closest(".d-contact")) openProfile(c, true); });
       const photo = el("div", "d-photo");
       photoOrInitial(photo, c, "d-initial");
       photo.append(el("span", "d-ribbon", "It's a match ♥"), el("span", "d-name", c.first));
@@ -1590,10 +1715,10 @@ function demoDating() {
       { matchId: -4, first: "Lin", goal: "Generator meets Projector", hobbies: ["Coffee", "Art"], vote: "nay", decideBy: until },
     ],
     done: [
-      { tagId: "demo-jo", savedAt: "demo", first: "Jo", goal: "Projector meets Generator", hobbies: ["Live music", "Board games"], photoURL: pic("#f472b6", "#5b2a6e"),
+      { tagId: "demo-jo", savedAt: "demo", first: "Jo", goal: "Projector meets Generator", hobbies: ["Live music", "Board games"], photoURL: pic("#f472b6", "#5b2a6e"), handle: "tg:jo_nightowl",
         theirs: { looking: [{ label: "See where it goes" }], type: "Projector", picks: [{ label: "Night owl", both: true }, { label: "Cat person" }, { label: "Spontaneous" }],
                   hobbies: [{ label: "Live music", both: true }, { label: "Board games", both: true }, { label: "Art" }, { label: "Books" }] } },
-      { tagId: "demo-alex", savedAt: "demo", first: "Alex", goal: "Both: Slow & steady", hobbies: ["Climbing", "Cooking"], handle: "@alex.climbs",
+      { tagId: "demo-alex", savedAt: "demo", first: "Alex", goal: "Both: Slow & steady", hobbies: ["Climbing", "Cooking"], handle: "ig:alex.climbs",
         theirs: { looking: [{ label: "Slow & steady", both: true }], type: "", picks: [{ label: "Early bird", both: true }, { label: "Dog person" }, { label: "Coffee date", both: true }, { label: "Planner" }],
                   hobbies: [{ label: "Climbing", both: true }, { label: "Cooking", both: true }, { label: "Hiking" }, { label: "Travel" }, { label: "Photography" }] } },
     ],
@@ -1871,7 +1996,7 @@ document.addEventListener("touchstart", e => {
   if (e.touches.length !== 1 || busy) return;
   const t = e.touches[0];
   if (t.clientX < 24 || t.clientX > window.innerWidth - 24) return;   // screen edges belong to the system back gesture
-  if (e.target.closest(".bar")) return;                                // the action bar is for tapping
+  if (e.target.closest(".bar, .crop")) return;                         // the action bar is for tapping; cropping drags
   drag = { x: t.clientX, y: t.clientY, time: Date.now(), axis: null, dx: 0, el: currentPanel() };
 }, { passive: true });
 
