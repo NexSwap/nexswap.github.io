@@ -1318,9 +1318,10 @@ function icon(id) {
   return svg;
 }
 
-// Their photo, or a gradient in one of the tag's glow colours (the same one for the same person) with their initial
+// Their photo (a small JPEG from the account, or a demo person's stock photo in demo/), or a gradient in one of the
+// tag's glow colours (the same one for the same person) with their initial
 function photoOrInitial(box, card, initialClass) {
-  if (/^data:image\/jpeg;base64,/.test(card.photoURL || "")) {
+  if (/^(data:image\/jpeg;base64,|demo\/[a-z]+\.jpg$)/.test(card.photoURL || "")) {
     const img = document.createElement("img");
     img.src = card.photoURL; img.alt = "";
     box.append(img);
@@ -1780,27 +1781,22 @@ function drawDating() {
 // mutual Baes
 function demoDating() {
   const until = new Date(Date.now() + 2 * 864e5 + 4 * 36e5).toISOString();
-  const pic = (a, b) => {
-    const c = document.createElement("canvas"), g = c.getContext("2d");
-    c.width = c.height = 160;
-    const fill = g.createLinearGradient(0, 0, 160, 160);
-    fill.addColorStop(0, a); fill.addColorStop(1, b);
-    g.fillStyle = fill; g.fillRect(0, 0, 160, 160);
-    g.fillStyle = "#ffffff55"; g.beginPath(); g.arc(56, 52, 30, 0, 7); g.fill();
-    return c.toDataURL("image/jpeg", 0.8);
-  };
+  // Stock photos (Unsplash, free under the Unsplash License), cut to 640 x 640 (twice a real photo, for a sharp mockup).
+  // Photo pages: Sam unsplash.com/photos/7fXswhCS9Fk, Mei U4JDjYmjn1g, Ravi rifCUO-4X8k, Lin EKrFx0S7FuM, Jo ZoSb5J3jU28,
+  // Alex AhZvzGUeLvs
+  const pic = name => `demo/${name}.jpg`;
   return {
     open: [
-      { matchId: -1, first: "Sam", goal: "Both: Slow & steady", hobbies: ["Running", "Coffee", "Board games"], vote: "", decideBy: until, photoURL: pic("#f2994a", "#862eaf") },
-      { matchId: -2, first: "Mei", goal: "Both: See where it goes", hobbies: ["Travel", "Film"], vote: "", decideBy: until },
-      { matchId: -3, first: "Ravi", goal: "Both: Slow & steady", hobbies: ["Football"], vote: "bae", decideBy: until, photoURL: pic("#a3e635", "#14532d") },
-      { matchId: -4, first: "Lin", goal: "Generator meets Projector", hobbies: ["Coffee", "Art"], vote: "nay", decideBy: until },
+      { matchId: -1, first: "Sam", goal: "Both: Slow & steady", hobbies: ["Running", "Coffee", "Board games"], vote: "", decideBy: until, photoURL: pic("sam") },
+      { matchId: -2, first: "Mei", goal: "Both: See where it goes", hobbies: ["Travel", "Film"], vote: "", decideBy: until, photoURL: pic("mei") },
+      { matchId: -3, first: "Ravi", goal: "Both: Slow & steady", hobbies: ["Football"], vote: "bae", decideBy: until, photoURL: pic("ravi") },
+      { matchId: -4, first: "Lin", goal: "Generator meets Projector", hobbies: ["Coffee", "Art"], vote: "nay", decideBy: until, photoURL: pic("lin") },
     ],
     done: [
-      { tagId: "demo-jo", savedAt: "demo", first: "Jo", goal: "Projector meets Generator", hobbies: ["Live music", "Board games"], photoURL: pic("#f472b6", "#5b2a6e"), handle: "tg:jo_nightowl",
+      { tagId: "demo-jo", savedAt: "demo", first: "Jo", goal: "Projector meets Generator", hobbies: ["Live music", "Board games"], photoURL: pic("jo"), handle: "tg:jo_nightowl",
         theirs: { looking: [{ label: "See where it goes" }], type: "Projector", picks: [{ label: "Night owl", both: true }, { label: "Cat person" }, { label: "Spontaneous" }],
                   hobbies: [{ label: "Live music", both: true }, { label: "Board games", both: true }, { label: "Art" }, { label: "Books" }] } },
-      { tagId: "demo-alex", savedAt: "demo", first: "Alex", goal: "Both: Slow & steady", hobbies: ["Climbing", "Cooking"], handle: "ig:alex.climbs",
+      { tagId: "demo-alex", savedAt: "demo", first: "Alex", goal: "Both: Slow & steady", hobbies: ["Climbing", "Cooking"], photoURL: pic("alex"), handle: "ig:alex.climbs",
         theirs: { looking: [{ label: "Slow & steady", both: true }], type: "", picks: [{ label: "Early bird", both: true }, { label: "Dog person" }, { label: "Coffee date", both: true }, { label: "Planner" }],
                   hobbies: [{ label: "Climbing", both: true }, { label: "Cooking", both: true }, { label: "Hiking" }, { label: "Travel" }, { label: "Photography" }] } },
     ],
