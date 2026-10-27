@@ -301,6 +301,29 @@
   /* First-date spots (dateIdeasBox): the first one on a mutual Bae's card, up to 3 in their profile */
   .d-idea { background: var(--surface-2); border: 1px solid var(--border); border-radius: 14px; padding: 10px 12px; margin: 0 0 12px; }
   .d-idea .d-label { margin: 0 0 6px; }
+  /* The Partners tab (team only) */
+  .p-list { list-style: none; padding: 0; margin: 16px 0 0; display: grid; gap: 8px; }
+  .p-item { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); }
+  .p-item.paused { opacity: .6; }
+  .p-row { display: block; width: 100%; padding: 10px 14px; background: none; border: 0; color: inherit; font: inherit;
+           text-align: left; cursor: pointer; }
+  .p-head { display: flex; align-items: center; gap: 8px; }
+  .p-head strong { flex: 1; min-width: 0; font-size: 16px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .p-state { font: 11px/1.4 var(--pixel); letter-spacing: .06em; text-transform: uppercase; padding: 2px 8px; border-radius: 999px;
+             background: var(--accent); color: var(--text); }
+  .p-item.paused .p-state { background: var(--surface-2); color: var(--dim); }
+  .p-contact { display: block; margin: 2px 0 0; font-size: 14px; color: var(--dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .p-form textarea { width: 100%; padding: 12px 14px; border-radius: 12px; border: 1px solid var(--border);
+                     background: var(--surface); color: var(--text); font: inherit; font-size: 16px; resize: vertical; }
+  .p-form textarea:focus { outline: 2px solid var(--accent-hi); border-color: transparent; }
+  .p-team { margin: 24px 0 0; font-size: 15px; color: var(--dim); }
+  .p-preview-label { margin: 24px 0 8px; }
+  .p-preview { pointer-events: none; }
+  .p-actions { display: grid; grid-template-columns: 2fr 1fr; gap: 8px; margin: 8px 0 0; }
+  .p-photo { display: block; width: 100%; aspect-ratio: 2 / 1; object-fit: cover; border-radius: 12px; border: 1px solid var(--border); margin: 0 0 8px; }
+  .p-photo-acts { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .p-photo-acts svg { width: 18px; height: 18px; }
+  .p-voucher { width: 100%; margin: 0 0 16px; }
   .d-idea-row { display: flex; align-items: center; gap: 10px; }
   .d-idea-spot + .d-idea-spot { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--border); }
   .d-idea-text { flex: 1; min-width: 0; display: grid; gap: 2px; }
@@ -310,7 +333,7 @@
   .d-idea-map { flex: none; display: inline-flex; align-items: center; gap: 6px; min-height: 40px; padding: 0 12px; border-radius: 10px;
                 border: 1px solid var(--border); color: var(--text); font-size: 14px; font-weight: 600; text-decoration: none; }
   .d-idea-map svg { width: 12px; height: 12px; transform: rotate(135deg); }   /* the back arrow, turned to point out: ↗ */
-  .d-idea-acts { flex: none; display: grid; gap: 6px; }
+  .d-idea-acts { flex: none; display: flex; gap: 6px; }   /* Map and Book side by side */
   .d-idea-book { background: #ffc56b; border-color: #ffc56b; color: #2a1438; }
   /* A pair perk under a spot (dateIdeasBox), and its voucher (openVoucher): the spot, both faces, the perk, hold to redeem */
   .d-perk { display: flex; align-items: center; gap: 8px; margin-top: 8px; padding: 8px 10px; border-radius: 10px;
@@ -326,6 +349,10 @@
   .d-vcard { width: 100%; max-width: 360px; overflow: hidden; border-radius: 22px; background: var(--surface); border: 1px solid #f472b688;
              box-shadow: 0 0 40px #f472b633; text-align: center; }
   .d-vhero { position: relative; height: 190px; background: linear-gradient(140deg, #862eaf, #f472b6, #ffc56b); }
+  /* The venue's photo (Partners tab) over the gradient once loaded, darkened at the top for the name */
+  .d-vphoto { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+  .d-vshade { position: absolute; inset: 0; background: linear-gradient(180deg, #000a, #0000 55%, #0005); }
+  .d-vclaim { margin-top: 6px; }
   .d-vvenue { position: absolute; top: 18px; left: 12px; right: 12px; font-size: 28px; font-weight: 800; text-shadow: 0 2px 12px #0006; }
   .d-vpair { position: absolute; left: 50%; bottom: -36px; transform: translateX(-50%); display: flex; }
   .d-vface { width: 78px; height: 78px; border-radius: 50%; border: 4px solid var(--surface); overflow: hidden; display: grid; place-items: center;
@@ -580,6 +607,7 @@
   <nav class="tabs" role="tablist" aria-label="Sections">
     <button class="tab" role="tab" id="tab-profile" aria-controls="view-profile" aria-selected="true" type="button">My profile</button>
     <button class="tab" role="tab" id="tab-matches" aria-controls="matches-section" aria-selected="false" type="button">Matches<span class="badge" id="match-count" hidden></span></button>
+    <button class="tab" role="tab" id="tab-partners" aria-controls="partners-section" aria-selected="false" type="button" hidden>Partners</button>
   </nav>
 </header>
 
@@ -884,6 +912,48 @@
     <div id="matches-signin" class="empty" hidden><strong>Sign in to see your matches</strong>
       Matches are saved to your account so you can follow up after the event.
       <button id="google-matches" class="btn btn-google" type="button" style="margin-top:16px">Continue with Google</button></div>
+  </section>
+
+  <!-- The team's date partners (only for accounts on the team list: is_team in schema.sql, which also guards every save) -->
+  <section id="partners-section" role="tabpanel" aria-labelledby="tab-partners" hidden>
+    <h1>Date partners</h1>
+    <p class="lead">Only the team sees this tab. Live partners show to mutual Baes as a first-date idea when they share one of the partner's interests.</p>
+    <div id="partner-list-view">
+      <button id="partner-add" class="btn btn-primary" type="button">Add a partner</button>
+      <ul id="partner-list" class="p-list"></ul>
+    </div>
+    <form id="partner-form" class="p-form" hidden novalidate>
+      <h2 id="partner-form-title">New partner</h2>
+      <label class="field"><span>Name</span><input type="text" id="p-name" maxlength="60" autocomplete="off"></label>
+      <label class="field"><span>Type</span><select id="p-kind"></select></label>
+      <label class="field"><span>Area</span><select id="p-area"></select></label>
+      <div class="field"><span id="p-interests-label">Interests (1 to 5)</span>
+        <p class="hint" style="margin:0">Couples who both picked one of these get this partner first.</p>
+        <div class="chips" id="p-interests" role="group" aria-labelledby="p-interests-label"></div></div>
+      <label class="field"><span>Perk</span><input type="text" id="p-perk" maxlength="80" placeholder="Free drink top-ups" autocomplete="off"></label>
+      <label class="field"><span>How to claim it</span><select id="p-claim"></select></label>
+      <label class="field"><span>Booking link (optional)</span>
+        <input type="url" id="p-book" maxlength="300" placeholder="https://" autocomplete="off" autocapitalize="none" spellcheck="false"></label>
+      <div class="field"><span>Venue photo (optional)</span>
+        <p class="hint" style="margin:0 0 8px">The background of the redeem card couples show staff. A wide photo works best.</p>
+        <img id="p-photo-img" class="p-photo" alt="The venue photo" hidden>
+        <div class="p-photo-acts">
+          <label class="btn btn-ghost"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="3"/><circle cx="9.5" cy="9.5" r="1.5"/><path d="M20 15l-5-5-9 9"/></svg><span id="p-photo-pick">Choose a photo</span><input type="file" id="p-photo-file" accept="image/*" hidden></label>
+          <button id="p-photo-remove" class="btn btn-link" type="button" hidden>Remove photo</button></div></div>
+      <label class="toggle"><input type="checkbox" id="p-live" checked> Live: untick to pause it without deleting</label>
+      <h3 class="p-team">Team only, never shown to guests</h3>
+      <label class="field"><span>Contact name</span><input type="text" id="p-contact-name" maxlength="60" autocomplete="off"></label>
+      <label class="field"><span>WhatsApp or phone</span><input type="text" id="p-contact-phone" maxlength="30" inputmode="tel" autocomplete="off"></label>
+      <label class="field"><span>Notes</span><textarea id="p-notes" maxlength="1000" rows="3"></textarea></label>
+      <p class="d-label p-preview-label">How couples see it</p>
+      <div id="p-preview" class="p-preview" aria-hidden="true"></div>
+      <button id="p-voucher" class="btn btn-ghost p-voucher" type="button">Preview the redeem card</button>
+      <div class="p-actions">
+        <button id="p-save" class="btn btn-primary" type="submit">Save</button>
+        <button id="p-cancel" class="btn btn-ghost" type="button">Cancel</button>
+      </div>
+      <button id="p-delete" class="btn btn-danger" type="button" hidden>Delete this partner</button>
+    </form>
   </section>
 </main>
 

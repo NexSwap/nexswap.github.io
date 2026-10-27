@@ -66,7 +66,7 @@ const HD_BLURBS = ["starts things", "steady energy, responds to what comes", "fa
 // only this page has it (sim/proximity_sim.cpp copies it for --profiles dating). Projectors guide Generators and
 // Manifesting Generators; Manifestors start things those two respond to; Reflectors sample everyone.
 const HD_PAIRS = [0b00110, 0b01001, 0b01001, 0b00110, 0b01111];
-// First-date spots for mutual Baes (dateIdeas), from what both picked: a date partner (DATE_PARTNERS) where one fits,
+// First-date spots for mutual Baes (dateIdeas), from what both picked: a date partner (datePartners) where one fits,
 // else one of these, with no perk (nothing is agreed with these venues). By DATING_INTERESTS bit: [emoji (unused),
 // name, kind, area ("" = a chain: Maps finds the nearest), and true for a free public place (a park, a beach), which
 // comes after the venues], several for some, none where there's no natural date spot; a reason line each
@@ -94,16 +94,26 @@ const DATE_REASONS = { 0: "You both run", 1: "You both hike", 4: "You both climb
   16: "You both game", 17: "You both play board games", 18: "You both read", 19: "You both love art",
   20: "You both take photos", 21: "You both love animals", 22: "You both like slowing down", 24: "You're both early birds", 25: "You're both night owls",
   26: "You're both dog people", 27: "You're both cat people", 28: "You both like coffee dates", 29: "You both like drinks dates" };
-// Date partners: venues that agreed a perk for matched pairs (bizdev tracker, Status "Confirmed"). Only these carry a
-// perk; a shared interest picks a partner before any DATE_SPOTS spot. Added by hand, one per venue, through a pull
-// request a teammate approves. interests: DATING_INTERESTS bits (1-3); kind: Café, Bar, Restaurant, Activity,
-// Workshop, Fitness, Outdoors or Culture; perk: short, as agreed; claim: "Mention NexSwap when booking", "Show your
-// match screen", "Use code <CODE>" or "Walk in"; book: the venue's booking page, optional (else Map only, and Use
-// opens the voucher). This page is public: never contact names, numbers or notes (those stay in the tracker)
-const DATE_PARTNERS = [
+// Date partners: venues that agreed a perk for matched pairs, typed in by the team on the Partners tab (dating.partners
+// in schema.sql, read with date_partners: live ones, public fields only). Only these carry a perk; a shared interest
+// picks a partner before any DATE_SPOTS spot. interests: DATING_INTERESTS bits; book: the venue's booking page, optional
+// (else Map only, and Use opens the voucher). This list is only used until the database has partners (the migration
+// not run yet, or offline).
+let datePartners = [
   { name: "The Cat Cafe", kind: "Café", area: "Bugis", interests: [27, 21], perk: "Free drink top-ups",
     claim: "Mention NexSwap when booking", book: "https://thecatcafe.sg" },
 ];
+// The Partners tab's fixed lists: save_partner in schema.sql checks against the same ones (keep them the same)
+const PARTNER_KINDS = ["Café", "Bar", "Restaurant", "Activity", "Workshop", "Fitness", "Outdoors", "Culture"];
+const PARTNER_AREAS = ["Bishan", "Boat Quay", "Bugis", "Bukit Timah", "Buona Vista", "Chinatown", "City Hall",
+  "Clarke Quay", "Dempsey", "Dhoby Ghaut", "East Coast", "Farrer Park", "Holland Village", "Islandwide", "Jalan Besar",
+  "Joo Chiat / Katong", "Jurong", "Kallang", "Kampong Glam", "Little India", "Marina Bay", "Novena", "Orchard",
+  "Pasir Panjang", "Paya Lebar", "Pulau Ubin", "Punggol", "Raffles Place", "River Valley", "Robertson Quay", "Sentosa",
+  "Serangoon", "Tampines", "Tanjong Pagar", "Telok Ayer", "Tiong Bahru"];
+const PARTNER_CLAIMS = ["Mention NexSwap when booking", "Mention NexSwap when you arrive", "Show your match screen"];
+const PARTNER_MAX_INTERESTS = 5;
+// A partner's interests: one number of DATING_INTERESTS bits, as dating.profiles keeps them, as a list of bits
+const interestBits = mask => DATING_INTERESTS.flatMap((_, i) => ((Number(mask) >>> i) & 1) === 1 ? [i] : []);
 const DATE_FALLBACK = [["☕", "Apartment Coffee", "Café", "Selegie Rd"], ["🌳", "Gardens by the Bay", "Gardens", "Marina Bay", true]];
 const IAM = ["Woman", "Man", "Non-binary", "Prefer not to say"];   // "who" bits 0-1: 1, 2, 3, 0
 const OPEN = ["Women", "Men", "Non-binary people"];                // "who" bits 2-4 (none = everyone)
@@ -519,7 +529,8 @@ if (TAG_ID && SETUP_CODE) {
 // ---------- screen state: tabs, 3-step wizard for new profiles, one-tap summary for returning users ----------
 const form = document.getElementById("form");
 const backButton = document.getElementById("back");
-let activeTab = "profile";
+let activeTab = "profile";   // "profile" | "matches" | "partners" (the team only)
+let onTeam = false;          // the signed-in account is on the team list (is_team): the Partners tab shows
 let mode = "wizard";        // "wizard" | "summary" | "howto" | "wifi"
 let step = 1;
 let howtoStep = 1;          // 1-4, the How it works cards
@@ -551,14 +562,18 @@ function fillSummary() {
 }
 
 function render() {
-  const onProfile = activeTab === "profile";
+  if (activeTab === "partners" && !onTeam) activeTab = "profile";
+  const onProfile = activeTab === "profile", onMatches = activeTab === "matches", onPartners = activeTab === "partners";
   document.getElementById("view-profile").hidden = !onProfile;
-  document.getElementById("matches-section").hidden = onProfile;
+  document.getElementById("matches-section").hidden = !onMatches;
+  document.getElementById("partners-section").hidden = !onPartners;
   document.getElementById("tab-profile").setAttribute("aria-selected", onProfile);
-  document.getElementById("tab-matches").setAttribute("aria-selected", !onProfile);
-  document.getElementById("matches-signin").hidden = onProfile || !!user || DEMO;
+  document.getElementById("tab-matches").setAttribute("aria-selected", onMatches);
+  document.getElementById("tab-partners").setAttribute("aria-selected", onPartners);
+  document.getElementById("tab-partners").hidden = !onTeam;
+  document.getElementById("matches-signin").hidden = !onMatches || !!user || DEMO;
   document.getElementById("demo-banner").hidden = !DEMO;
-  if (!onProfile && !user && !DEMO) { document.getElementById("match-list").replaceChildren(); }
+  if (onMatches && !user && !DEMO) { document.getElementById("match-list").replaceChildren(); }
 
   const wifiLast = mode === "wifi" && wifiStep === 3;
   button.hidden = !onProfile || wifiLast;          // on the last Wi-Fi card the link is the action
@@ -764,7 +779,222 @@ document.getElementById("tab-matches").addEventListener("click", () => {
   activeTab = "matches"; render();
   if (DATING && dating.done.length) showReveals(dating.done);   // (a mutual Bae not revealed on this phone yet)
 });
+document.getElementById("tab-partners").addEventListener("click", () => { activeTab = "partners"; setStatus(""); render(); });
 document.getElementById("edit").addEventListener("click", () => { mode = "wizard"; step = 1; render(); window.scrollTo(0, 0); });
+
+// ---------- the Partners tab: the team types in date partners (schema.sql: is_team, team_partners, save_partner) ----------
+// Only for accounts on the team list. The database checks the list again on every call, so hiding the tab from everyone
+// else is tidiness, not the lock. Each field comes from a fixed list where it can (PARTNER_KINDS, PARTNER_AREAS,
+// PARTNER_CLAIMS, the dating interests), and save_partner checks them again.
+let teamPartners = [];   // every partner with every field, newest change first (team_partners)
+let editingPartner = null;   // the partner open in the form ({} for a new one), or null for the list
+// ?demo=1&team=1: the tab with a sample list, signed out; saves and deletes change only this page, nothing is sent
+const DEMO_TEAM = DEMO && params.get("team") === "1";
+// (the demo's list also stands in for the database's on the demo Matches tab, photos and all)
+function useDemoPartners() {
+  datePartners = teamPartners.filter(x => x.live).map(x => ({ ...x, interests: interestBits(x.interests) }));
+  if (DATING && dating.demo) drawDating();
+}
+const DEMO_PARTNERS = [{ id: 1, name: "The Cat Cafe", kind: "Café", area: "Bugis", interests: 2 ** 27 + 2 ** 21,
+  perk: "Free drink top-ups", claim: "Mention NexSwap when booking", book: "https://thecatcafe.sg", live: true,
+  contact_name: "Jefferson Soh", contact_phone: "", notes: "Sample: the demo saves nothing" }];
+let partnerPhoto = null;   // a photo chosen or removed ('') in the form; null: the partner's own, unchanged
+const partnerForm = document.getElementById("partner-form");
+const pField = id => document.getElementById("p-" + id);
+
+function fillSelect(select, labels, prompt) {
+  select.replaceChildren(new Option(prompt, ""), ...labels.map(l => new Option(l, l)));
+}
+fillSelect(pField("kind"), PARTNER_KINDS, "Choose a type");
+fillSelect(pField("area"), PARTNER_AREAS, "Choose an area");
+fillSelect(pField("claim"), PARTNER_CLAIMS, "Choose how");
+addChips("p-interests", DATING_INTERESTS);
+const partnerBits = () => [...document.querySelectorAll("#p-interests input:checked")].map(b => Number(b.value));
+function limitPartnerChips() {
+  const full = partnerBits().length >= PARTNER_MAX_INTERESTS;
+  document.querySelectorAll("#p-interests input").forEach(b => b.disabled = full && !b.checked);
+}
+
+// The tab shows after sign-in when the database says this account is on the team
+async function checkTeam() {
+  if (DEMO_TEAM) {
+    onTeam = true;
+    if (!teamPartners.length) teamPartners = DEMO_PARTNERS.map(p => ({ ...p }));
+    activeTab = "partners";
+    render();
+    drawPartners();
+    return;
+  }
+  const { data, error } = user ? await supabase.rpc("is_team") : { data: false };
+  if (error) console.warn("Team check failed:", error.message);   // (the migration not run yet: no Partners tab)
+  onTeam = data === true;
+  render();
+  if (onTeam) loadTeamPartners();
+}
+
+async function loadTeamPartners() {
+  const { data, error } = await supabase.rpc("team_partners");
+  if (error) { setStatus(`Couldn't load the partners: ${error.message}`, "err"); return; }
+  teamPartners = data;
+  drawPartners();
+}
+
+function drawPartners() {
+  document.getElementById("partner-list-view").hidden = !!editingPartner;
+  partnerForm.hidden = !editingPartner;
+  if (editingPartner) return;
+  const list = document.getElementById("partner-list");
+  list.replaceChildren();
+  if (!teamPartners.length) list.append(el("li", "empty", "No partners yet."));
+  // Two lines each: the name (and Live or Paused), then who to talk to there. Tap to see and edit the rest.
+  for (const p of teamPartners) {
+    const li = el("li", p.live ? "p-item" : "p-item paused"), row = el("button", "p-row"), head = el("span", "p-head");
+    row.type = "button";
+    row.setAttribute("aria-label", `Edit ${p.name}`);
+    row.addEventListener("click", () => openPartner(p));
+    head.append(el("strong", "", p.name), el("span", "p-state", p.live ? "Live" : "Paused"));
+    row.append(head, el("span", "p-contact", [p.contact_name, p.contact_phone].filter(Boolean).join(" · ") || "No contact yet"));
+    li.append(row);
+    list.append(li);
+  }
+}
+
+function openPartner(p) {
+  editingPartner = p;
+  document.getElementById("partner-form-title").textContent = p.id ? `Edit ${p.name}` : "New partner";
+  pField("name").value = p.name || "";
+  pField("kind").value = p.kind || "";
+  pField("area").value = p.area || "";
+  const bits = interestBits(p.interests || 0);
+  document.querySelectorAll("#p-interests input").forEach(b => b.checked = bits.includes(Number(b.value)));
+  pField("perk").value = p.perk || "";
+  pField("claim").value = p.claim || "";
+  pField("book").value = p.book || "";
+  pField("live").checked = p.live ?? true;
+  pField("contact-name").value = p.contact_name || "";
+  pField("contact-phone").value = p.contact_phone || "";
+  pField("notes").value = p.notes || "";
+  pField("delete").hidden = !p.id;
+  partnerPhoto = null;
+  showPartnerPhoto();
+  limitPartnerChips();
+  previewPartner();
+  setStatus("");
+  drawPartners();
+  window.scrollTo(0, 0);
+}
+
+// The form as save_partner takes it; interests as one number of bits, as dating.profiles keeps them. The photo only
+// when it changed (save_partner keeps the old one otherwise)
+function partnerFromForm() {
+  return { ...(partnerPhoto === null ? {} : { photo: partnerPhoto }), name: pField("name").value.trim(), kind: pField("kind").value, area: pField("area").value,
+           interests: partnerBits().reduce((mask, b) => mask + 2 ** b, 0), perk: pField("perk").value.trim(),
+           claim: pField("claim").value, book: pField("book").value.trim(), live: pField("live").checked,
+           contact_name: pField("contact-name").value.trim(), contact_phone: pField("contact-phone").value.trim(),
+           notes: pField("notes").value.trim() };
+}
+
+// The partner as a matched couple would see it (dateIdeasBox), redrawn as the form changes
+function previewPartner() {
+  const p = partnerFromForm(), bits = partnerBits();
+  pField("preview").replaceChildren(dateIdeasBox([{ name: p.name || "Venue name", kind: p.kind || "Type", area: p.area,
+    why: DATE_REASONS[bits[0]] || "Something you both like", perk: p.perk || "Your perk", claim: p.claim, book: p.book,
+    partner: true }], "First date idea", null));
+}
+
+// The venue photo: the one in the form, else the partner's own
+const VENUE_PHOTO = /^data:image\/jpeg;base64,[A-Za-z0-9+/]+=*$/;
+const formPhoto = () => partnerPhoto ?? editingPartner?.photo ?? "";
+function showPartnerPhoto() {
+  const img = pField("photo-img"), photo = formPhoto();
+  img.hidden = !VENUE_PHOTO.test(photo);
+  if (!img.hidden) img.src = photo;
+  pField("photo-remove").hidden = img.hidden;
+  pField("photo-pick").textContent = img.hidden ? "Choose a photo" : "Change photo";
+}
+// Redrawn here: longest side 720 px, a JPEG under the database's 150,000 characters (dating.partners.photo). Not
+// cropped: the redeem card shows the middle of it (object-fit: cover). Drawing it again drops location details.
+function makeVenuePhoto(img) {
+  const scale = Math.min(1, 720 / Math.max(img.naturalWidth, img.naturalHeight));
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.round(img.naturalWidth * scale);
+  canvas.height = Math.round(img.naturalHeight * scale);
+  canvas.getContext("2d").drawImage(img, 0, 0, canvas.width, canvas.height);
+  for (const quality of [0.8, 0.7, 0.6, 0.5, 0.4]) {
+    const url = canvas.toDataURL("image/jpeg", quality);
+    if (VENUE_PHOTO.test(url) && url.length <= 140000) return url;
+  }
+  throw new Error("too big");
+}
+pField("photo-file").addEventListener("change", async e => {
+  const file = e.target.files[0];
+  e.target.value = "";
+  if (!file) return;
+  try {
+    partnerPhoto = makeVenuePhoto(await loadPicture(file));
+    setStatus("");
+  } catch (err) {
+    console.error(err);
+    setStatus("Couldn't use that picture. Try another one (a JPEG or PNG works).", "err");
+  }
+  showPartnerPhoto();
+});
+pField("photo-remove").addEventListener("click", () => { partnerPhoto = ""; showPartnerPhoto(); });
+// The real redeem card with what's in the form, and a sample match
+pField("voucher").addEventListener("click", () => {
+  const p = partnerFromForm();
+  openVoucher({ name: p.name || "Venue name", perk: p.perk || "Your perk", claim: p.claim, photo: formPhoto() },
+              { first: "Sam", tagId: "preview" });   // (a sample match)
+});
+
+partnerForm.addEventListener("input", () => { limitPartnerChips(); previewPartner(); });
+document.getElementById("partner-add").addEventListener("click", () => openPartner({}));
+pField("cancel").addEventListener("click", () => { editingPartner = null; setStatus(""); drawPartners(); });
+partnerForm.addEventListener("submit", async e => {
+  e.preventDefault();
+  const save = pField("save");
+  if (DEMO_TEAM) {   // (only the gaps the database would refuse: the demo can't ask it)
+    const p = partnerFromForm();
+    if (!p.name || !p.kind || !p.area || !p.interests || !p.perk || !p.claim) {
+      setStatus("Demo: fill in the name, type, area, 1 to 3 interests, perk and how to claim it.", "err");
+      return;
+    }
+    const id = editingPartner.id ?? Math.max(0, ...teamPartners.map(x => x.id)) + 1;
+    teamPartners = [{ ...p, photo: formPhoto(), id }, ...teamPartners.filter(x => x.id !== id)];
+    setStatus(`Demo: ${p.name} saved on this page only.`, "ok");
+    editingPartner = null;
+    drawPartners();
+    useDemoPartners();
+    return;
+  }
+  save.disabled = true;
+  // The database checks every field and says what's wrong (save_partner)
+  const { error } = await supabase.rpc("save_partner", { p_id: editingPartner.id ?? null, p_partner: partnerFromForm() });
+  save.disabled = false;
+  if (error) { setStatus(`Couldn't save: ${error.message}`, "err"); return; }
+  setStatus(`Saved ${pField("name").value.trim()}.`, "ok");
+  editingPartner = null;
+  partnersLoaded = null;   // (the matches screen loads the new list)
+  await loadTeamPartners();
+});
+pField("delete").addEventListener("click", async () => {
+  const p = editingPartner;
+  if (!p?.id || !confirm(`Delete ${p.name} for good? To hide it for now, untick Live instead.`)) return;
+  if (DEMO_TEAM) {
+    teamPartners = teamPartners.filter(x => x.id !== p.id);
+    setStatus(`Demo: ${p.name} deleted on this page only.`, "ok");
+    editingPartner = null;
+    drawPartners();
+    useDemoPartners();
+    return;
+  }
+  const { error } = await supabase.rpc("delete_partner", { p_id: p.id });
+  if (error) { setStatus(`Couldn't delete: ${error.message}`, "err"); return; }
+  setStatus(`Deleted ${p.name}.`, "ok");
+  editingPartner = null;
+  partnersLoaded = null;
+  await loadTeamPartners();
+});
 document.getElementById("howto-open").addEventListener("click", openHowto);
 document.getElementById("howto-skip").addEventListener("click", finishHowto);
 backButton.addEventListener("click", () => {
@@ -1153,7 +1383,10 @@ async function showUser(u) {
   document.getElementById("signed-in").hidden = !u;
   document.getElementById("delete").hidden = !u;
   document.getElementById("share-contact-row").hidden = !u || DATING;
+  onTeam = false;
+  editingPartner = null;
   render();
+  checkTeam();
   if (!u) {
     if (wifiSent) { setStatus(SENT_SIGNED_OUT); wifiSent = null; }   // (back from the tag's Wi-Fi, signed out)
     return;
@@ -1368,7 +1601,7 @@ function datingProfileOf(card) {
   return out;
 }
 
-// Up to 3 first-date spots from what you both picked: one per shared pick or hobby, a date partner (DATE_PARTNERS) before
+// Up to 3 first-date spots from what you both picked: one per shared pick or hobby, a date partner (datePartners) before
 // a DATE_SPOTS spot, no place twice; partners first, then venues, then free public places, then quick picks before
 // hobbies. Where a pick has several, which one comes from the shared picks alone, so both of you see the same. Nothing
 // shared (or nothing with a spot): a classic one.
@@ -1379,7 +1612,7 @@ function dateIdeas(card) {
   let ideas = [];
   const seen = new Set();
   for (const b of bits) {
-    const partners = DATE_PARTNERS.filter(p => p.interests.includes(b) && !seen.has(p.name));
+    const partners = datePartners.filter(p => p.interests.includes(b) && !seen.has(p.name));
     if (partners.length) {
       const p = partners[(seed + b) % partners.length];
       seen.add(p.name);
@@ -1402,7 +1635,7 @@ function dateIdeas(card) {
 }
 
 // A box of first-date spots, each with a Google Maps search (phones open the Maps app) and, for a partner that takes
-// bookings, Book; under a partner, its perk and how to claim it (a partner with no booking page: Use, openVoucher)
+// bookings, Book; under a partner, its perk and how to claim it, with Use (the redeem card, openVoucher)
 function dateIdeasBox(ideas, label, card) {
   const box = el("div", "d-idea");
   box.append(el("p", "d-label", label));
@@ -1432,14 +1665,11 @@ function dateIdeasBox(ideas, label, card) {
     box.append(spot);
     if (idea.perk) {
       const perk = el("div", "d-perk");
-      perk.append(el("span", "", idea.claim ? `${idea.perk} · ${idea.claim}` : idea.perk));
-      if (!idea.book) {
-        const use = el("button", "d-perk-use", "Use");
-        use.type = "button";
-        use.setAttribute("aria-label", `Use the perk at ${idea.name}: ${idea.perk}`);
-        use.addEventListener("click", () => openVoucher(idea, card));
-        perk.append(use);
-      }
+      const use = el("button", "d-perk-use", "Use");
+      use.type = "button";
+      use.setAttribute("aria-label", `Use the perk at ${idea.name}: ${idea.perk}`);
+      use.addEventListener("click", () => openVoucher(idea, card));
+      perk.append(el("span", "", idea.claim ? `${idea.perk} · ${idea.claim}` : idea.perk), use);
       spot.append(perk);
     }
   }
@@ -1455,6 +1685,17 @@ function perkCode(idea, card) {
   let h = 7;
   for (const ch of `${card.matchId || card.tagId || card.first}|${idea.name}`) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
   return "NX-" + h.toString(36).toUpperCase().slice(-4).padStart(4, "0");
+}
+// A partner's photo for its redeem card: the one it came with (the Partners tab's preview, the demo), else from the
+// database once per partner (partner_photo in schema.sql: only when a card opens, not with the list). "" when none.
+const venuePhotos = new Map();
+function venuePhoto(idea) {
+  if (typeof idea.photo === "string") return Promise.resolve(idea.photo);
+  if (!idea.id || DEMO) return Promise.resolve("");
+  if (!venuePhotos.has(idea.id))
+    venuePhotos.set(idea.id, supabase.rpc("partner_photo", { p_id: idea.id })
+      .then(({ data, error }) => { if (error) console.warn("Venue photo not loaded:", error.message); return data || ""; }));
+  return venuePhotos.get(idea.id);
 }
 function closeVoucher() {
   const v = document.querySelector(".d-voucher");
@@ -1482,6 +1723,13 @@ function openVoucher(idea, card) {
   photoOrInitial(me, { first: document.getElementById("first").value.trim() || "You", photoURL: datingPhoto, tagId: "me" }, "");
   pair.append(them, me);
   hero.append(el("span", "d-vvenue", idea.name), pair);
+  venuePhoto(idea).then(src => {   // (the gradient until it loads, and when there's none)
+    if (!VENUE_PHOTO.test(src)) return;
+    const img = el("img", "d-vphoto");
+    img.alt = "";
+    img.addEventListener("load", () => hero.prepend(img, el("span", "d-vshade")));
+    img.src = src;
+  });
 
   const body = el("div", "d-vbody"), clock = el("span", "d-vclock");
   const valid = el("p", "d-vfine", `Valid until ${until.toLocaleDateString("en-SG", { day: "numeric", month: "short", year: "numeric" })} · `);
@@ -1521,7 +1769,9 @@ function openVoucher(idea, card) {
   hold.addEventListener("contextmenu", e => e.preventDefault());   // a long press on a phone shouldn't open a menu
   if (redeemedPerks.has(code)) showDone(redeemedPerks.get(code));
 
-  body.append(el("p", "d-vwho", `${card.first} & you · first date`), el("div", "d-vbanner", idea.perk), valid, hold, note, done);
+  body.append(el("p", "d-vwho", `${card.first} & you · first date`), el("div", "d-vbanner", idea.perk));
+  if (idea.claim) body.append(el("p", "d-vfine d-vclaim", idea.claim));
+  body.append(valid, hold, note, done);
   const vcard = el("div", "d-vcard");
   vcard.append(hero, body);
   v.append(x, vcard);
@@ -1982,7 +2232,19 @@ function demoDating() {
   };
 }
 
+// Live partners from the database, once a visit (date_partners in schema.sql: anyone can call it, the demo too). If that
+// fails (the migration not run yet, or offline) the list in datePartners stays. Saving on the Partners tab loads again.
+let partnersLoaded = null;
+function loadPartners() {
+  partnersLoaded ??= supabase.rpc("date_partners").then(({ data, error }) => {
+    if (error) { console.warn("Date partners not loaded:", error.message); return; }
+    datePartners = data.map(r => ({ ...r, interests: interestBits(r.interests) }));
+  });
+  return partnersLoaded;
+}
+
 async function renderDating() {
+  await loadPartners();
   if (DEMO) {
     if (!dating.demo) dating = { ...demoDating(), demo: true };
   } else {
@@ -2203,7 +2465,7 @@ function swipe(direction) {
   slideIn(document.getElementById(activeTab === "profile" ? "view-profile" : "matches-section"), next);
 }
 
-// Can we move in this direction from here? (My profile is on the left, Matches on the right)
+// Can we move in this direction from here? (My profile is on the left, Matches on the right; Partners only by its tab)
 function canSwipe(direction) {
   const next = direction === "left";
   return next ? activeTab === "profile" : activeTab === "matches";
@@ -2211,7 +2473,7 @@ function canSwipe(direction) {
 
 // The element that moves under the finger: the whole tab
 function currentPanel() {
-  return document.getElementById(activeTab === "profile" ? "view-profile" : "matches-section");
+  return document.getElementById({ profile: "view-profile", matches: "matches-section", partners: "partners-section" }[activeTab]);
 }
 
 function resetPanel(el) {
