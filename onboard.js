@@ -66,12 +66,11 @@ const HD_BLURBS = ["starts things", "steady energy, responds to what comes", "fa
 // only this page has it (sim/proximity_sim.cpp copies it for --profiles dating). Projectors guide Generators and
 // Manifesting Generators; Manifestors start things those two respond to; Reflectors sample everyone.
 const HD_PAIRS = [0b00110, 0b01001, 0b01001, 0b00110, 0b01111];
-// First-date spots for mutual Baes (dateIdeas), from what both picked. A mockup: shown on the demo only (?demo=1) until
-// venues sign up as partners with a perk for matched pairs (bizdev tracker, "Date partners (SG)"), then
-// DATE_IDEAS_LIVE. By DATING_INTERESTS bit: [emoji, name, kind, area ("" = a chain: Maps finds the nearest), and
-// true for a free public place (a park, a beach), which can't be a partner and so comes after the venues], several for
-// some, none where there's no natural date spot; a reason line each
-const DATE_IDEAS_LIVE = false;
+// First-date spots for mutual Baes (dateIdeas), from what both picked: a date partner (DATE_PARTNERS) where one fits,
+// else one of these, with no perk (nothing is agreed with these venues). By DATING_INTERESTS bit: [emoji (unused),
+// name, kind, area ("" = a chain: Maps finds the nearest), and true for a free public place (a park, a beach), which
+// comes after the venues], several for some, none where there's no natural date spot; a reason line each
+const DATE_IDEAS_LIVE = true;   // false: only the demo (?demo=1) shows them
 const DATE_SPOTS = {
   0: [["🏃", "MacRitchie Reservoir", "Trail run", "Thomson", true]], 1: [["🥾", "Henderson Waves", "Southern Ridges walk", "Telok Blangah", true]],
   4: [["🧗", "Boulder Movement", "Bouldering", "Bugis"], ["🧗", "fit · bloc", "Bouldering", "Kent Ridge"]],
@@ -93,18 +92,18 @@ const DATE_REASONS = { 0: "You both run", 1: "You both hike", 4: "You both climb
   8: "You both love brunch", 9: "You both love coffee", 10: "You both like wine", 11: "You both love to travel",
   12: "You both love the beach", 13: "You both love live music", 14: "You both sing", 15: "You both love movies",
   16: "You both game", 17: "You both play board games", 18: "You both read", 19: "You both love art",
-  20: "You both take photos", 22: "You both like slowing down", 24: "You're both early birds", 25: "You're both night owls",
+  20: "You both take photos", 21: "You both love animals", 22: "You both like slowing down", 24: "You're both early birds", 25: "You're both night owls",
   26: "You're both dog people", 27: "You're both cat people", 28: "You both like coffee dates", 29: "You both like drinks dates" };
-// A pair perk at a spot (openVoucher), by name: the ask in the bizdev tracker ("Perk to ask for"), not agreed with any
-// venue yet. Free public places have none
-const DATE_PERKS = { "Atlas": "Welcome drink for two", "Jigger & Pony": "Welcome drink for two",
-  "Le Bon Funk": "A glass of wine on the house", "Wild Honey": "Free coffees for two",
-  "Tiong Bahru Bakery": "Free pastry with two coffees", "Apartment Coffee": "Free drink or pastry for two",
-  "Nylon Coffee Roasters": "Free drink or pastry for two", "Boulder Movement": "Free shoe rental for two",
-  "fit · bloc": "Free shoe rental for two", "Palate Sensations": "Couples rate", "Teo Heng KTV": "Extra hour free",
-  "Golden Village": "Discounted tickets for two", "Timezone": "Bonus game credit for two", "Settlers Cafe": "Free game cover for two",
-  "Kinokuniya": "Book voucher for two", "National Gallery Singapore": "Two-for-one tickets", "ArtScience Museum": "Two-for-one tickets",
-  "Surrey Hills Grocer": "Free dog treat with two coffees", "Catmosphere Cat Cafe": "2-for-1 first hour" };
+// Date partners: venues that agreed a perk for matched pairs (bizdev tracker, Status "Confirmed"). Only these carry a
+// perk; a shared interest picks a partner before any DATE_SPOTS spot. Added by hand, one per venue, through a pull
+// request a teammate approves. interests: DATING_INTERESTS bits (1-3); kind: Café, Bar, Restaurant, Activity,
+// Workshop, Fitness, Outdoors or Culture; perk: short, as agreed; claim: "Mention NexSwap when booking", "Show your
+// match screen", "Use code <CODE>" or "Walk in"; book: the venue's booking page, optional (else Map only, and Use
+// opens the voucher). This page is public: never contact names, numbers or notes (those stay in the tracker)
+const DATE_PARTNERS = [
+  { name: "The Cat Cafe", kind: "Café", area: "Bugis", interests: [27, 21], perk: "Free drink top-ups",
+    claim: "Mention NexSwap when booking", book: "https://thecatcafe.sg" },
+];
 const DATE_FALLBACK = [["☕", "Apartment Coffee", "Café", "Selegie Rd"], ["🌳", "Gardens by the Bay", "Gardens", "Marina Bay", true]];
 const IAM = ["Woman", "Man", "Non-binary", "Prefer not to say"];   // "who" bits 0-1: 1, 2, 3, 0
 const OPEN = ["Women", "Men", "Non-binary people"];                // "who" bits 2-4 (none = everyone)
@@ -1369,9 +1368,10 @@ function datingProfileOf(card) {
   return out;
 }
 
-// Up to 3 first-date spots from what you both picked (DATE_SPOTS): one per shared pick or hobby, no place twice; venues
-// before free public places, then quick picks before hobbies. Where a pick has several spots, which one comes from the
-// shared picks alone, so both of you see the same. Nothing shared (or nothing with a spot): a classic one.
+// Up to 3 first-date spots from what you both picked: one per shared pick or hobby, a date partner (DATE_PARTNERS) before
+// a DATE_SPOTS spot, no place twice; partners first, then venues, then free public places, then quick picks before
+// hobbies. Where a pick has several, which one comes from the shared picks alone, so both of you see the same. Nothing
+// shared (or nothing with a spot): a classic one.
 function dateIdeas(card) {
   const full = datingProfileOf(card);
   const bits = [...full.picks, ...full.hobbies].filter(x => x.both).map(x => DATING_INTERESTS.indexOf(x.label)).filter(b => b >= 0);
@@ -1379,46 +1379,67 @@ function dateIdeas(card) {
   let ideas = [];
   const seen = new Set();
   for (const b of bits) {
+    const partners = DATE_PARTNERS.filter(p => p.interests.includes(b) && !seen.has(p.name));
+    if (partners.length) {
+      const p = partners[(seed + b) % partners.length];
+      seen.add(p.name);
+      ideas.push({ ...p, why: DATE_REASONS[b], partner: true });
+      continue;
+    }
     const spots = DATE_SPOTS[b];
     if (!spots) continue;
-    const [emoji, name, kind, area, free] = spots[(seed + b) % spots.length];
+    const [, name, kind, area, free] = spots[(seed + b) % spots.length];
     if (seen.has(name)) continue;
     seen.add(name);
-    ideas.push({ emoji, name, kind, area, free: !!free, why: DATE_REASONS[b], perk: DATE_PERKS[name] });
+    ideas.push({ name, kind, area, free: !!free, why: DATE_REASONS[b] });
   }
-  ideas = [...ideas.filter(x => !x.free), ...ideas.filter(x => x.free)];   // (in order within each)
+  ideas = [...ideas.filter(x => x.partner), ...ideas.filter(x => !x.partner && !x.free), ...ideas.filter(x => x.free)];
   if (!ideas.length) {
-    const [emoji, name, kind, area] = DATE_FALLBACK[seed % DATE_FALLBACK.length];
-    ideas.push({ emoji, name, kind, area, why: "A classic first date", perk: DATE_PERKS[name] });
+    const [, name, kind, area] = DATE_FALLBACK[seed % DATE_FALLBACK.length];
+    ideas.push({ name, kind, area, why: "A classic first date" });
   }
   return ideas.slice(0, 3);
 }
 
-// A box of first-date spots, each with a Google Maps search (phones open the Maps app), and under one with a pair perk,
-// the perk and Use (openVoucher)
+// A box of first-date spots, each with a Google Maps search (phones open the Maps app) and, for a partner that takes
+// bookings, Book; under a partner, its perk and how to claim it (a partner with no booking page: Use, openVoucher)
 function dateIdeasBox(ideas, label, card) {
   const box = el("div", "d-idea");
   box.append(el("p", "d-label", label));
   for (const idea of ideas) {
     const spot = el("div", "d-idea-spot"), row = el("div", "d-idea-row"), text = el("div", "d-idea-text");   // a spot: the place, then its perk
-    text.append(el("strong", "", `${idea.emoji} ${idea.name}`), el("span", "d-idea-where", `${idea.kind} · ${idea.area || "nearest outlet"}`),
+    text.append(el("strong", "", idea.name), el("span", "d-idea-where", `${idea.kind} · ${idea.area || "nearest outlet"}`),
                 el("span", "d-idea-why", idea.why));
-    const map = el("a", "d-idea-map", "Map");
+    const acts = el("div", "d-idea-acts"), map = el("a", "d-idea-map", "Map");
     map.href = "https://www.google.com/maps/search/?api=1&query=" +
                encodeURIComponent([idea.name, idea.area, "Singapore"].filter(Boolean).join(", "));
     map.target = "_blank";
     map.rel = "noopener";
     map.setAttribute("aria-label", `${idea.name} on Google Maps`);
     map.append(icon("fa-back"));
-    row.append(text, map);
+    acts.append(map);
+    if (idea.book) {
+      const book = el("a", "d-idea-map d-idea-book", "Book");
+      book.href = idea.book;
+      book.target = "_blank";
+      book.rel = "noopener";
+      book.setAttribute("aria-label", `Book ${idea.name}`);
+      book.append(icon("fa-back"));
+      acts.append(book);
+    }
+    row.append(text, acts);
     spot.append(row);
     box.append(spot);
     if (idea.perk) {
-      const perk = el("div", "d-perk"), use = el("button", "d-perk-use", "Use");
-      use.type = "button";
-      use.setAttribute("aria-label", `Use the perk at ${idea.name}: ${idea.perk}`);
-      use.addEventListener("click", () => openVoucher(idea, card));
-      perk.append(el("span", "", `✨ ${idea.perk}`), use);
+      const perk = el("div", "d-perk");
+      perk.append(el("span", "", idea.claim ? `${idea.perk} · ${idea.claim}` : idea.perk));
+      if (!idea.book) {
+        const use = el("button", "d-perk-use", "Use");
+        use.type = "button";
+        use.setAttribute("aria-label", `Use the perk at ${idea.name}: ${idea.perk}`);
+        use.addEventListener("click", () => openVoucher(idea, card));
+        perk.append(use);
+      }
       spot.append(perk);
     }
   }
@@ -1460,7 +1481,7 @@ function openVoucher(idea, card) {
   photoOrInitial(them, card, "");
   photoOrInitial(me, { first: document.getElementById("first").value.trim() || "You", photoURL: datingPhoto, tagId: "me" }, "");
   pair.append(them, me);
-  hero.append(el("span", "d-vvenue", `${idea.emoji} ${idea.name}`), pair);
+  hero.append(el("span", "d-vvenue", idea.name), pair);
 
   const body = el("div", "d-vbody"), clock = el("span", "d-vclock");
   const valid = el("p", "d-vfine", `Valid until ${until.toLocaleDateString("en-SG", { day: "numeric", month: "short", year: "numeric" })} · `);
@@ -1952,7 +1973,7 @@ function demoDating() {
     ],
     done: [
       { tagId: "demo-jo", savedAt: "demo", first: "Jo", goal: "Projector meets Generator", hobbies: ["Live music", "Board games"], photoURL: pic("jo"), handle: "tg:jo_nightowl",
-        theirs: { looking: [{ label: "See where it goes" }], type: "Projector", picks: [{ label: "Night owl", both: true }, { label: "Cat person" }, { label: "Spontaneous" }],
+        theirs: { looking: [{ label: "See where it goes" }], type: "Projector", picks: [{ label: "Night owl", both: true }, { label: "Cat person", both: true }, { label: "Spontaneous" }],
                   hobbies: [{ label: "Live music", both: true }, { label: "Board games", both: true }, { label: "Art" }, { label: "Books" }] } },
       { tagId: "demo-alex", savedAt: "demo", first: "Alex", goal: "Both: Slow & steady", hobbies: ["Climbing", "Cooking"], photoURL: pic("alex"), handle: "ig:alex.climbs",
         theirs: { looking: [{ label: "Slow & steady", both: true }], type: "", picks: [{ label: "Early bird", both: true }, { label: "Dog person" }, { label: "Coffee date", both: true }, { label: "Planner" }],
