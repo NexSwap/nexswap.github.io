@@ -131,6 +131,10 @@ const DEMO_ROWS = [{ uid: "demo-alex" }, { uid: "demo-priya" }, { uid: "demo-wai
 // ?demo=1&e=d: dating sample people, demoDating() below
 const TAG_ID = /^[0-9A-Fa-f]{8}$/.test(params.get("tag") || "") ? params.get("tag").toUpperCase() : "";
 const SETUP_CODE = /^[0-9A-Fa-f]{6}$/.test(params.get("k") || "") ? params.get("k").toUpperCase() : "";
+// The event the tag is set up for: its QR adds &ev=<id> (the console's events, firmware v2.2.6 and Apply), and the claim
+// records it, so every registration belongs to an event. A tag link without it is from a tag that wasn't updated.
+const EVENT_ID = /^[1-9][0-9]{0,8}$/.test(params.get("ev") || "") ? Number(params.get("ev")) : 0;
+const TAG_OLD = "This tag needs an update before it can be set up. Ask an organiser.";
 // A dating event: the tag's QR adds &e=d (its event type, set from the organiser's console). The dating form, a v2
 // profile, and an optional account (dating.profiles in schema.sql, apart from business profiles). A link without it (a
 // bookmark, Matches later) uses what the last link with a tag or e= said, so a profile saved without a tag opens again.
@@ -943,6 +947,9 @@ const now = () => new Date().toISOString();
 const userName = u => u.user_metadata?.full_name || u.user_metadata?.name || "";
 const userPhoto = u => u.user_metadata?.avatar_url || u.user_metadata?.picture || "";
 const TAG_TAKEN = "This tag is still linked to someone from an earlier event. Ask the organiser to reset the tags.";
+// The database's other reasons to refuse a claim (check_claim_event in schema.sql): the tag still has an old event
+const TAG_ENDED = "This tag is still set up for an event that has ended. Ask an organiser to set it up for this one.";
+const TAG_WRONG_EVENT = "This tag isn't set up for this event. Ask an organiser.";
 // Sent without signing in: the tag works, but nothing links it to an account (the claim is made when sending), so
 // matches can't be saved. Said plainly, as "Done!" alone let people think they were signed in (2026-10-18)
 const SENT_SIGNED_OUT = `Sent to your tag. To ${DATING ? "see your mutual Baes" : "get your matches"} after the event, sign in with Google and send it again.`;
@@ -1078,12 +1085,15 @@ async function saveToAccount() {
 // Link a tag to this account, so the console saves its match list here when the tag is returned. Refused while
 // someone else holds it: the first claim stands until the tags are freed after the event. Called after sending a
 // profile (never on a plain visit: that could re-claim a tag already handed back). kind: which tables the console saves
-// its log to (dating.matches with the votes, or matches).
-async function claimTag(tagId) {
+// its log to (dating.matches with the votes, or matches). eventId: the event it's for (the database refuses one that has
+// ended, or is of the other type).
+async function claimTag(tagId, eventId) {
   const { error } = await supabase.from("tag_owners").upsert({ tag_id: tagId, uid: user.id, kind: DATING ? "d" : "b",
-                                                               updated_at: now() });
+                                                               event_id: eventId || null, updated_at: now() });
   if (error) console.error(error);
-  return !error;
+  // "" when claimed, else what to tell them
+  const m = error ? error.message : "";
+  return !error ? "" : /no event/.test(m) ? TAG_OLD : /ended/.test(m) ? TAG_ENDED : /event/.test(m) ? TAG_WRONG_EVENT : TAG_TAKEN;
 }
 
 async function signIn() {
@@ -1194,9 +1204,9 @@ async function showUser(u) {
     setStatus(`Couldn't load your saved profile: ${e.message}`, "err");
   }
   if (wifiSent) {                            // the tag has the profile: link it to the account, as after Bluetooth
-    const claimed = await claimTag(wifiSent.id);
+    const problem = await claimTag(wifiSent.id, wifiSent.ev);
     const saved = await saveToAccount();
-    if (!claimed) setStatus(TAG_TAKEN, "err");
+    if (problem) setStatus(problem, "err");
     else if (!saved) setStatus("Sent to your tag, but saving to your account failed. Try again later.", "err");
     wifiSent = null;
   }
@@ -2096,12 +2106,13 @@ button.addEventListener("click", async () => {
   }
   const over = overLimit();
   if (over) { mode = "wizard"; step = over.step; render(); window.scrollTo(0, 0); setStatus(over.text, "err"); return; }
+  if (TAG_ID && !EVENT_ID) { setStatus(TAG_OLD, "err"); return; }
   saveForm();
   setBusy(true, canSend ? "Sending…" : "Saving…");
   const saved = await saveToAccount();
   try {
     if (canWifi) {                                 // no Bluetooth: the three Wi-Fi steps, then one link to the tag
-      try { localStorage.setItem(WIFI_PENDING, JSON.stringify({ id: TAG_ID })); } catch (e) {}
+      try { localStorage.setItem(WIFI_PENDING, JSON.stringify({ id: TAG_ID, ev: EVENT_ID })); } catch (e) {}
       document.getElementById("wifi-go").href =
         `http://192.168.4.1/p?k=${SETUP_CODE}&p=${encodeURIComponent(payload())}`;
       mode = "wifi";
@@ -2118,10 +2129,10 @@ button.addEventListener("click", async () => {
     const { result, code } = await sendToTag();
     if (result === "ok") {
       rememberTag(TAG_ID, code);
-      let accountOk = saved, tagTaken = false;
+      let accountOk = saved, tagProblem = "";
       if (user) {
         try {
-          tagTaken = !(await claimTag(TAG_ID));
+          tagProblem = await claimTag(TAG_ID, EVENT_ID);
           await renderMatches();
         } catch (e) {
           console.error(e);
@@ -2133,7 +2144,7 @@ button.addEventListener("click", async () => {
       try { firstTime = !localStorage.getItem(ONBOARDED); } catch (e) {}
       mode = firstTime ? "howto" : "summary";
       howtoStep = 1;
-      if (tagTaken) setStatus(`Sent to your tag. ${TAG_TAKEN}`, "err");
+      if (tagProblem) setStatus(`Sent to your tag. ${tagProblem}`, "err");
       else if (!user) setStatus(SENT_SIGNED_OUT);
       else setStatus(accountOk ? "Done! Your tag should say “Profile saved”."
                                : "Sent to your tag, but saving to your account failed. Try again later.", accountOk ? "ok" : "err");
@@ -2252,3 +2263,4 @@ if (hasProfile() && !wifiSent) mode = "summary";   // just back from the tag's W
 if (DEMO) { activeTab = "matches"; renderMatches(); }
 if (params.get("howto") === "1") { activeTab = "profile"; mode = "howto"; }   // open How it works directly
 render();
+if (TAG_ID && !EVENT_ID && !wifiSent) setStatus(TAG_OLD, "err");
