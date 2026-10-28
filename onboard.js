@@ -114,8 +114,8 @@ const PARTNER_AREAS = ["Ang Mo Kio", "Bedok", "Bishan", "Boat Quay", "Bugis", "B
   "Raffles Place", "River Valley", "Robertson Quay", "Sembawang", "Sengkang", "Sentosa", "Serangoon", "Tampines",
   "Tanjong Pagar", "Telok Ayer", "Thomson", "Tiong Bahru", "Toa Payoh", "Woodlands", "Yishun"];
 const PROMO_CLAIM = "Use the promo code when booking";   // (save_partner: needs a promo code)
-const PARTNER_CLAIMS = ["Mention NexSwap when booking", "Mention NexSwap when you arrive", "Show your match screen",
-  PROMO_CLAIM];
+const MATCH_CLAIM = "Show your match screen";        // (the redeem card makes a code for staff: openVoucher)
+const PARTNER_CLAIMS = ["Mention NexSwap when booking", "Mention NexSwap when you arrive", MATCH_CLAIM, PROMO_CLAIM];
 // Rough middles of PARTNER_AREAS (keep them in step; not Islandwide), [lat, lng]: the area a Maps link's coordinates
 // are nearest to (nearestArea)
 const PARTNER_AREA_CENTRES = {
@@ -1718,8 +1718,8 @@ function dateIdeas(card) {
 
 // A box of first-date spots, each with Map (the partner's own Maps link, else a Google Maps search; phones open the Maps
 // app) and, for a partner that takes bookings, Book; under a partner, its perk and how to claim it. Tapping that opens
-// the redeem card (openVoucher); a partner with a promo code also has Use, and its card the redeem button (the code shows
-// there only once redeemed, never here)
+// the redeem card (openVoucher); a partner with a promo code, or whose staff see the match screen, also has Use, and
+// its card the redeem button (the code shows there only once redeemed, never here)
 function dateIdeasBox(ideas, label, card) {
   const box = el("div", "d-idea");
   box.append(el("p", "d-label", label));
@@ -1751,7 +1751,7 @@ function dateIdeasBox(ideas, label, card) {
       const perk = el("div", "d-perk");
       perk.append(el("span", "", idea.claim ? `${idea.perk} · ${idea.claim}` : idea.perk));
       perk.addEventListener("click", () => openVoucher(idea, card));   // (Use's tap too)
-      if (idea.promo) {
+      if (idea.promo || idea.claim === MATCH_CLAIM) {
         const use = el("button", "d-perk-use", "Use");
         use.type = "button";
         use.setAttribute("aria-label", `Use the perk at ${idea.name}: ${idea.perk}`);
@@ -1774,9 +1774,16 @@ function dateIdeasBox(ideas, label, card) {
 }
 
 // A pair perk, full screen: the spot, both faces, the perk and how to claim it. With a promo code (Partners tab), also
-// Hold to redeem: held for 1.2 s, it gives way to Redeemed with where and when, and the code with Copy. A redeem is only
-// remembered on this page (a real one would be recorded per pair in Supabase, so each perk is used once)
-const redeemedPerks = new Map();   // pair|venue -> when it was redeemed
+// Hold to redeem: held for 1.2 s, it gives way to Redeemed with where and when, and the code with Copy. With "Show
+// your match screen", the same at the counter, but the code is a new one made on the page (matchCode), on a moving
+// shimmer so staff can tell it from a screenshot. A redeem is only remembered on this page: a reload means a new hold
+// and code
+const redeemedPerks = new Map();   // pair|venue -> { at: when it was redeemed, code }
+// A one-time code for staff, e.g. NX-7K3Q (no 0, O, 1 or I)
+function matchCode() {
+  const abc = "23456789ABCDEFGHJKLMNPQRSTUVWXYZ";
+  return "NX-" + Array.from(crypto.getRandomValues(new Uint8Array(4)), n => abc[n % abc.length]).join("");
+}
 // A partner's photo for its redeem card: the one it came with (the Partners tab's preview, the demo), else from the
 // database once per partner (partner_photo in schema.sql: only when a card opens, not with the list). "" when none.
 const venuePhotos = new Map();
@@ -1829,10 +1836,11 @@ function openVoucher(idea, card) {
   v.append(x, vcard);
   document.body.append(v);
   v.focus();
-  if (!idea.promo) return;   // (nothing to redeem: the perk is claimed as the strip says)
+  const forStaff = !idea.promo && idea.claim === MATCH_CLAIM;
+  if (!idea.promo && !forStaff) return;   // (nothing to redeem: the perk is claimed as the strip says)
 
   const hold = el("button", "d-vhold");
-  const note = el("p", "d-vfine", "Hold to get your code.");
+  const note = el("p", "d-vfine", forStaff ? "Hold at the counter, in front of staff." : "Hold to get your code.");
   hold.type = "button";
   hold.append(el("i"), el("span", "", "Hold to redeem"));
   const done = el("div", "d-vdone"), when = el("p", "d-vfine");
@@ -1850,8 +1858,10 @@ function openVoucher(idea, card) {
     setTimeout(() => { copy.textContent = "Copy"; }, 1500);
   });
   row.append(el("div", "d-vcode", idea.promo), copy);   // the venue's code, to type when booking
-  done.append(row, when);
-  const showDone = at => {
+  const staffCode = el("div", "d-vcode live");   // (for staff to see, so no Copy)
+  done.append(forStaff ? staffCode : row, when);
+  const showDone = ({ at, code }) => {
+    staffCode.textContent = code;
     when.textContent = `${idea.name} · ${at.toLocaleDateString("en-SG", { day: "numeric", month: "short" })}, ` +
                        at.toLocaleTimeString("en-SG", { hour: "2-digit", minute: "2-digit", hour12: false });
     hold.hidden = note.hidden = true;
@@ -1864,10 +1874,10 @@ function openVoucher(idea, card) {
     e.preventDefault();
     hold.classList.add("on");
     timer = setTimeout(() => {
-      const at = new Date();
-      redeemedPerks.set(key, at);
+      const redeem = { at: new Date(), code: forStaff ? matchCode() : "" };
+      redeemedPerks.set(key, redeem);
       try { navigator.vibrate?.(30); } catch (err) {}
-      showDone(at);
+      showDone(redeem);
     }, 1200);
   };
   const stop = () => { clearTimeout(timer); hold.classList.remove("on"); };
@@ -1875,7 +1885,8 @@ function openVoucher(idea, card) {
   hold.addEventListener("keydown", start);
   for (const type of ["pointerup", "pointerleave", "pointercancel", "keyup", "blur"]) hold.addEventListener(type, stop);
   hold.addEventListener("contextmenu", e => e.preventDefault());   // a long press on a phone shouldn't open a menu
-  if (redeemedPerks.has(key)) showDone(redeemedPerks.get(key));
+  const past = redeemedPerks.get(key);
+  if (past && (past.code || !forStaff)) showDone(past);   // (no code: redeemed before the claim changed, so hold again)
 
   body.append(hold, note, done);
 }

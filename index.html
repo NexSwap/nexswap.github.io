@@ -382,6 +382,14 @@
   .d-vcode-row .d-vcode { margin: 0; min-width: 0; font-size: 26px; letter-spacing: .08em; overflow-wrap: anywhere; }
   .d-vcopy { flex: none; min-height: 36px; padding: 0 14px; border: 0; border-radius: 999px; background: #ffc56b; color: #2a1438;
              font-size: 13px; font-weight: 700; cursor: pointer; }
+  /* A "Show your match screen" code: a light band sweeps across it, so staff can tell it from a screenshot (with reduced
+     motion, it pulses instead) */
+  .d-vcode.live { display: inline-block; padding: 4px 12px; border-radius: 10px; color: #2a1438; letter-spacing: .1em;
+                  background: linear-gradient(110deg, #ffc56b 40%, #fff3d6 50%, #ffc56b 60%) 0 0 / 300% 100%;
+                  animation: d-shimmer 1.6s linear infinite; }
+  @keyframes d-shimmer { from { background-position: 100% 0; } to { background-position: 0 0; } }
+  @media (prefers-reduced-motion: reduce) { .d-vcode.live { background: #ffc56b; animation: d-pulse 1s ease-in-out infinite alternate; } }
+  @keyframes d-pulse { to { background-color: #fff3d6; } }
   @media (prefers-reduced-motion: no-preference) {
     .d-voucher { animation: d-fadein .2s ease-out; }
     .d-vdone { animation: d-redeem .35s ease-out; }
