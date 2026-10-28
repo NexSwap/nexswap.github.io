@@ -1760,10 +1760,9 @@ function dateIdeasBox(ideas, label, card) {
   return box;
 }
 
-// A pair perk, full screen: the spot, both faces, the perk and how to claim it. With a promo code, also valid-until with a
-// ticking clock (so it's not a screenshot) and Hold to redeem: held for 1.2 s, it gives way to Redeemed with where and when, and the venue's promo
-// code with Copy when it has one (Partners tab). A redeem is only remembered on this page (a real one would be recorded
-// per pair in Supabase, so each perk is used once)
+// A pair perk, full screen: the spot, both faces, the perk and how to claim it. With a promo code (Partners tab), also
+// Hold to redeem: held for 1.2 s, it gives way to Redeemed with where and when, and the code with Copy. A redeem is only
+// remembered on this page (a real one would be recorded per pair in Supabase, so each perk is used once)
 const redeemedPerks = new Map();   // pair|venue -> when it was redeemed
 // A partner's photo for its redeem card: the one it came with (the Partners tab's preview, the demo), else from the
 // database once per partner (partner_photo in schema.sql: only when a card opens, not with the list). "" when none.
@@ -1779,13 +1778,12 @@ function venuePhoto(idea) {
 function closeVoucher() {
   const v = document.querySelector(".d-voucher");
   if (!v) return false;
-  clearInterval(v.clockTimer);
   v.remove();
   return true;
 }
 function openVoucher(idea, card) {
   closeVoucher();
-  const key = `${card.matchId || card.tagId || card.first}|${idea.name}`, until = new Date(Date.now() + 30 * 864e5);
+  const key = `${card.matchId || card.tagId || card.first}|${idea.name}`;
   const v = el("div", "d-voucher");
   v.setAttribute("role", "dialog");
   v.setAttribute("aria-modal", "true");
@@ -1820,15 +1818,8 @@ function openVoucher(idea, card) {
   v.focus();
   if (!idea.promo) return;   // (nothing to redeem: the perk is claimed as the strip says)
 
-  const clock = el("span", "d-vclock");
-  const valid = el("p", "d-vfine", `Valid until ${until.toLocaleDateString("en-SG", { day: "numeric", month: "short", year: "numeric" })} · `);
-  valid.append(clock);
-  const tick = () => { clock.textContent = new Date().toLocaleTimeString("en-SG", { hour12: false }); };
-  tick();
-  v.clockTimer = setInterval(tick, 1000);
-
   const hold = el("button", "d-vhold");
-  const note = el("p", "d-vfine", "Hold to get your code. One use only.");
+  const note = el("p", "d-vfine", "Hold to get your code.");
   hold.type = "button";
   hold.append(el("i"), el("span", "", "Hold to redeem"));
   const done = el("div", "d-vdone"), when = el("p", "d-vfine");
@@ -1873,7 +1864,7 @@ function openVoucher(idea, card) {
   hold.addEventListener("contextmenu", e => e.preventDefault());   // a long press on a phone shouldn't open a menu
   if (redeemedPerks.has(key)) showDone(redeemedPerks.get(key));
 
-  body.append(valid, hold, note, done);
+  body.append(hold, note, done);
 }
 // Escape closes the voucher (only it: capture, before closeProfile's listener)
 window.addEventListener("keydown", e => { if (e.key === "Escape" && closeVoucher()) e.stopImmediatePropagation(); }, true);
