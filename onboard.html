@@ -318,7 +318,7 @@
   .p-form textarea:focus { outline: 2px solid var(--accent-hi); border-color: transparent; }
   .p-team { margin: 24px 0 0; font-size: 15px; color: var(--dim); }
   .p-preview-label { margin: 24px 0 8px; }
-  .p-preview .d-perk-use { pointer-events: none; }   /* Map and Book work (new tab); Use is the button below */
+  .p-preview .d-perk { pointer-events: none; }   /* Map and Book work (new tab); the perk is the button below */
   .p-actions { display: grid; grid-template-columns: 2fr 1fr; gap: 8px; margin: 8px 0 0; }
   .p-photo { display: block; width: 100%; aspect-ratio: 2 / 1; object-fit: cover; border-radius: 12px; border: 1px solid var(--border); margin: 0 0 8px; }
   .p-photo-acts { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
@@ -340,6 +340,8 @@
   .d-perk { display: flex; align-items: center; gap: 8px; margin-top: 8px; padding: 8px 10px; border-radius: 10px;
             background: linear-gradient(90deg, #f472b633, #ffc56b33); }
   .d-perk span { flex: 1; min-width: 0; font-size: 13px; font-weight: 600; }
+  .d-perk { cursor: pointer; }   /* tap: the redeem card (dateIdeasBox) */
+  .d-perk span.d-perk-more { flex: none; font-size: 18px; line-height: 1; opacity: .7; }
   .d-perk-use { flex: none; min-height: 32px; padding: 0 14px; border: 0; border-radius: 999px; background: #ffc56b; color: #2a1438;
                 font-size: 13px; font-weight: 700; cursor: pointer; }
   .d-voucher { position: fixed; inset: 0; z-index: 60; display: grid; place-items: center; padding: 24px 18px; overflow-y: auto;

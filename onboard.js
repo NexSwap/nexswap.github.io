@@ -934,14 +934,18 @@ function partnerFromForm() {
 }
 
 // The partner as a matched couple would see it (dateIdeasBox), redrawn as the form changes. Map and Book open the links
-// in a new tab, to check them; Use is off here (Preview the redeem card does that)
+// in a new tab, to check them; the perk and Use are off here (Preview the redeem card does that)
 function previewPartner() {
   const p = partnerFromForm(), bits = partnerBits();
   pField("preview").replaceChildren(dateIdeasBox([{ name: p.name || "Venue name", kind: p.kind || "Type", area: p.area,
     why: DATE_REASONS[bits[0]] || "Something you both like", perk: p.perk || "Your perk", claim: p.claim,
     book: /^https:\/\/\S+$/.test(p.book) ? p.book : "",
     map: MAP_LINK.test(p.map) ? p.map : "", promo: p.promo, partner: true }], "First date idea", null));
-  pField("preview").querySelectorAll(".d-perk-use").forEach(b => { b.tabIndex = -1; b.setAttribute("aria-hidden", "true"); });
+  pField("preview").querySelectorAll(".d-perk-use, .d-perk[role=button]").forEach(b => {
+    b.tabIndex = -1;
+    b.removeAttribute("role");
+    if (b.matches(".d-perk-use")) b.setAttribute("aria-hidden", "true");
+  });
 }
 
 // The venue photo: the one in the form, else the partner's own
@@ -1700,8 +1704,9 @@ function dateIdeas(card) {
 }
 
 // A box of first-date spots, each with Map (the partner's own Maps link, else a Google Maps search; phones open the Maps
-// app) and, for a partner that takes bookings, Book; under a partner, its perk and how to claim it, and for a partner
-// with a promo code, Use (the redeem card, openVoucher: the code shows there only once redeemed, never here)
+// app) and, for a partner that takes bookings, Book; under a partner, its perk and how to claim it. Tapping that opens
+// the redeem card (openVoucher); a partner with a promo code also has Use, and its card the redeem button (the code shows
+// there only once redeemed, never here)
 function dateIdeasBox(ideas, label, card) {
   const box = el("div", "d-idea");
   box.append(el("p", "d-label", label));
@@ -1732,12 +1737,22 @@ function dateIdeasBox(ideas, label, card) {
     if (idea.perk) {
       const perk = el("div", "d-perk");
       perk.append(el("span", "", idea.claim ? `${idea.perk} · ${idea.claim}` : idea.perk));
+      perk.addEventListener("click", () => openVoucher(idea, card));   // (Use's tap too)
       if (idea.promo) {
         const use = el("button", "d-perk-use", "Use");
         use.type = "button";
         use.setAttribute("aria-label", `Use the perk at ${idea.name}: ${idea.perk}`);
-        use.addEventListener("click", () => openVoucher(idea, card));
         perk.append(use);
+      } else {   // (the strip is the button)
+        perk.setAttribute("role", "button");
+        perk.tabIndex = 0;
+        perk.setAttribute("aria-label", `See the perk at ${idea.name}: ${idea.perk}`);
+        perk.addEventListener("keydown", e => {
+          if (e.key !== "Enter" && e.key !== " ") return;
+          e.preventDefault();
+          openVoucher(idea, card);
+        });
+        perk.append(el("span", "d-perk-more", "›"));
       }
       spot.append(perk);
     }
@@ -1745,8 +1760,8 @@ function dateIdeasBox(ideas, label, card) {
   return box;
 }
 
-// A pair perk, full screen: the spot, both faces, the perk, valid-until with a ticking clock (so staff can tell it's not a
-// screenshot), and Hold to redeem: held for 1.2 s, it gives way to Redeemed with where and when, and the venue's promo
+// A pair perk, full screen: the spot, both faces, the perk and how to claim it. With a promo code, also valid-until with a
+// ticking clock (so it's not a screenshot) and Hold to redeem: held for 1.2 s, it gives way to Redeemed with where and when, and the venue's promo
 // code with Copy when it has one (Partners tab). A redeem is only remembered on this page (a real one would be recorded
 // per pair in Supabase, so each perk is used once)
 const redeemedPerks = new Map();   // pair|venue -> when it was redeemed
@@ -1795,7 +1810,17 @@ function openVoucher(idea, card) {
     img.src = src;
   });
 
-  const body = el("div", "d-vbody"), clock = el("span", "d-vclock");
+  const body = el("div", "d-vbody");
+  body.append(el("p", "d-vwho", `${card.first} & you · first date`), el("div", "d-vbanner", idea.perk));
+  if (idea.claim) body.append(el("p", "d-vfine d-vclaim", idea.claim));
+  const vcard = el("div", "d-vcard");
+  vcard.append(hero, body);
+  v.append(x, vcard);
+  document.body.append(v);
+  v.focus();
+  if (!idea.promo) return;   // (nothing to redeem: the perk is claimed as the strip says)
+
+  const clock = el("span", "d-vclock");
   const valid = el("p", "d-vfine", `Valid until ${until.toLocaleDateString("en-SG", { day: "numeric", month: "short", year: "numeric" })} · `);
   valid.append(clock);
   const tick = () => { clock.textContent = new Date().toLocaleTimeString("en-SG", { hour12: false }); };
@@ -1803,28 +1828,25 @@ function openVoucher(idea, card) {
   v.clockTimer = setInterval(tick, 1000);
 
   const hold = el("button", "d-vhold");
-  const note = el("p", "d-vfine", idea.promo ? "Hold to get your code. One use only." : "Show staff, then hold. One use only.");
+  const note = el("p", "d-vfine", "Hold to get your code. One use only.");
   hold.type = "button";
   hold.append(el("i"), el("span", "", "Hold to redeem"));
   const done = el("div", "d-vdone"), when = el("p", "d-vfine");
   done.append(el("p", "d-vdone-t", "✓ Redeemed"));
-  if (idea.promo) {   // the venue's code, to type when booking
-    const row = el("div", "d-vcode-row"), copy = el("button", "d-vcopy", "Copy");
-    copy.type = "button";
-    copy.setAttribute("aria-label", `Copy the promo code ${idea.promo}`);
-    copy.addEventListener("click", async () => {
-      try {
-        await navigator.clipboard.writeText(idea.promo);
-        copy.textContent = "Copied";
-      } catch (err) {
-        copy.textContent = "Couldn't copy";
-      }
-      setTimeout(() => { copy.textContent = "Copy"; }, 1500);
-    });
-    row.append(el("div", "d-vcode", idea.promo), copy);
-    done.append(row);
-  }
-  done.append(when);
+  const row = el("div", "d-vcode-row"), copy = el("button", "d-vcopy", "Copy");
+  copy.type = "button";
+  copy.setAttribute("aria-label", `Copy the promo code ${idea.promo}`);
+  copy.addEventListener("click", async () => {
+    try {
+      await navigator.clipboard.writeText(idea.promo);
+      copy.textContent = "Copied";
+    } catch (err) {
+      copy.textContent = "Couldn't copy";
+    }
+    setTimeout(() => { copy.textContent = "Copy"; }, 1500);
+  });
+  row.append(el("div", "d-vcode", idea.promo), copy);   // the venue's code, to type when booking
+  done.append(row, when);
   const showDone = at => {
     when.textContent = `${idea.name} · ${at.toLocaleDateString("en-SG", { day: "numeric", month: "short" })}, ` +
                        at.toLocaleTimeString("en-SG", { hour: "2-digit", minute: "2-digit", hour12: false });
@@ -1851,14 +1873,7 @@ function openVoucher(idea, card) {
   hold.addEventListener("contextmenu", e => e.preventDefault());   // a long press on a phone shouldn't open a menu
   if (redeemedPerks.has(key)) showDone(redeemedPerks.get(key));
 
-  body.append(el("p", "d-vwho", `${card.first} & you · first date`), el("div", "d-vbanner", idea.perk));
-  if (idea.claim) body.append(el("p", "d-vfine d-vclaim", idea.claim));
   body.append(valid, hold, note, done);
-  const vcard = el("div", "d-vcard");
-  vcard.append(hero, body);
-  v.append(x, vcard);
-  document.body.append(v);
-  v.focus();
 }
 // Escape closes the voucher (only it: capture, before closeProfile's listener)
 window.addEventListener("keydown", e => { if (e.key === "Escape" && closeVoucher()) e.stopImmediatePropagation(); }, true);
