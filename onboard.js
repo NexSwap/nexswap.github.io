@@ -106,29 +106,38 @@ let datePartners = [
 ];
 // The Partners tab's fixed lists: save_partner in schema.sql checks against the same ones (keep them the same)
 const PARTNER_KINDS = ["Café", "Bar", "Restaurant", "Activity", "Workshop", "Fitness", "Outdoors", "Culture"];
-const PARTNER_AREAS = ["Bishan", "Boat Quay", "Bugis", "Bukit Timah", "Buona Vista", "Chinatown", "City Hall",
-  "Clarke Quay", "Dempsey", "Dhoby Ghaut", "East Coast", "Farrer Park", "Holland Village", "Islandwide", "Jalan Besar",
-  "Joo Chiat / Katong", "Jurong", "Kallang", "Kampong Glam", "Little India", "Marina Bay", "Novena", "Orchard",
-  "Pasir Panjang", "Paya Lebar", "Pulau Ubin", "Punggol", "Raffles Place", "River Valley", "Robertson Quay", "Sentosa",
-  "Serangoon", "Tampines", "Tanjong Pagar", "Telok Ayer", "Tiong Bahru"];
+const PARTNER_AREAS = ["Ang Mo Kio", "Bedok", "Bishan", "Boat Quay", "Bugis", "Bukit Batok", "Bukit Merah",
+  "Bukit Panjang", "Bukit Timah", "Buona Vista", "Changi", "Chinatown", "Choa Chu Kang", "City Hall", "Clarke Quay",
+  "Clementi", "Dempsey", "Dhoby Ghaut", "East Coast", "Farrer Park", "Geylang", "Holland Village", "Hougang",
+  "Islandwide", "Jalan Besar", "Joo Chiat / Katong", "Jurong", "Kallang", "Kampong Glam", "Little India", "Mandai",
+  "Marina Bay", "Novena", "Orchard", "Pasir Panjang", "Pasir Ris", "Paya Lebar", "Pulau Ubin", "Punggol", "Queenstown",
+  "Raffles Place", "River Valley", "Robertson Quay", "Sembawang", "Sengkang", "Sentosa", "Serangoon", "Tampines",
+  "Tanjong Pagar", "Telok Ayer", "Thomson", "Tiong Bahru", "Toa Payoh", "Woodlands", "Yishun"];
 const PROMO_CLAIM = "Use the promo code when booking";   // (save_partner: needs a promo code)
 const PARTNER_CLAIMS = ["Mention NexSwap when booking", "Mention NexSwap when you arrive", "Show your match screen",
   PROMO_CLAIM];
 // Rough middles of PARTNER_AREAS (keep them in step; not Islandwide), [lat, lng]: the area a Maps link's coordinates
 // are nearest to (nearestArea)
 const PARTNER_AREA_CENTRES = {
+  "Ang Mo Kio": [1.3691, 103.8454], "Bedok": [1.3240, 103.9300],
   "Bishan": [1.3508, 103.8485], "Boat Quay": [1.2867, 103.8490], "Bugis": [1.3008, 103.8559],
-  "Bukit Timah": [1.3294, 103.8021], "Buona Vista": [1.3071, 103.7903], "Chinatown": [1.2836, 103.8443],
-  "City Hall": [1.2931, 103.8520], "Clarke Quay": [1.2906, 103.8465], "Dempsey": [1.3043, 103.8098],
+  "Bukit Batok": [1.3590, 103.7637], "Bukit Merah": [1.2819, 103.8239], "Bukit Panjang": [1.3774, 103.7719],
+  "Bukit Timah": [1.3294, 103.8021], "Buona Vista": [1.3071, 103.7903], "Changi": [1.3600, 103.9890],
+  "Chinatown": [1.2836, 103.8443], "Choa Chu Kang": [1.3840, 103.7470], "City Hall": [1.2931, 103.8520],
+  "Clarke Quay": [1.2906, 103.8465], "Clementi": [1.3151, 103.7652], "Dempsey": [1.3043, 103.8098],
   "Dhoby Ghaut": [1.2990, 103.8455], "East Coast": [1.3010, 103.9120], "Farrer Park": [1.3124, 103.8541],
-  "Holland Village": [1.3113, 103.7958], "Jalan Besar": [1.3105, 103.8600], "Joo Chiat / Katong": [1.3080, 103.9020],
-  "Jurong": [1.3330, 103.7420], "Kallang": [1.3100, 103.8710], "Kampong Glam": [1.3025, 103.8590],
-  "Little India": [1.3066, 103.8518], "Marina Bay": [1.2820, 103.8585], "Novena": [1.3204, 103.8438],
-  "Orchard": [1.3040, 103.8318], "Pasir Panjang": [1.2760, 103.7910], "Paya Lebar": [1.3180, 103.8930],
-  "Pulau Ubin": [1.4044, 103.9625], "Punggol": [1.4043, 103.9020], "Raffles Place": [1.2840, 103.8515],
-  "River Valley": [1.2950, 103.8350], "Robertson Quay": [1.2905, 103.8390], "Sentosa": [1.2494, 103.8303],
-  "Serangoon": [1.3500, 103.8730], "Tampines": [1.3540, 103.9440], "Tanjong Pagar": [1.2765, 103.8455],
-  "Telok Ayer": [1.2820, 103.8485], "Tiong Bahru": [1.2860, 103.8270] };
+  "Geylang": [1.3120, 103.8800], "Holland Village": [1.3113, 103.7958], "Hougang": [1.3712, 103.8920],
+  "Jalan Besar": [1.3105, 103.8600], "Joo Chiat / Katong": [1.3080, 103.9020], "Jurong": [1.3330, 103.7420],
+  "Kallang": [1.3100, 103.8710], "Kampong Glam": [1.3025, 103.8590], "Little India": [1.3066, 103.8518],
+  "Mandai": [1.4043, 103.7930], "Marina Bay": [1.2820, 103.8585], "Novena": [1.3204, 103.8438],
+  "Orchard": [1.3040, 103.8318], "Pasir Panjang": [1.2760, 103.7910], "Pasir Ris": [1.3721, 103.9474],
+  "Paya Lebar": [1.3180, 103.8930], "Pulau Ubin": [1.4044, 103.9625], "Punggol": [1.4043, 103.9020],
+  "Queenstown": [1.2942, 103.7861], "Raffles Place": [1.2840, 103.8515], "River Valley": [1.2950, 103.8350],
+  "Robertson Quay": [1.2905, 103.8390], "Sembawang": [1.4491, 103.8185], "Sengkang": [1.3917, 103.8950],
+  "Sentosa": [1.2494, 103.8303], "Serangoon": [1.3500, 103.8730], "Tampines": [1.3540, 103.9440],
+  "Tanjong Pagar": [1.2765, 103.8455], "Telok Ayer": [1.2820, 103.8485], "Thomson": [1.3540, 103.8330],
+  "Tiong Bahru": [1.2860, 103.8270], "Toa Payoh": [1.3343, 103.8563], "Woodlands": [1.4370, 103.7865],
+  "Yishun": [1.4294, 103.8355] };
 // A Google Maps link, as save_partner takes it
 const MAP_LINK = /^https:\/\/(maps\.app\.goo\.gl|goo\.gl\/maps|maps\.google\.[a-z.]+|(www\.)?google\.[a-z.]+\/maps)[/?]\S*$/;
 const PROMO_CODE = /^[A-Za-z0-9_-]{0,30}$/;   // (save_partner's check)
@@ -143,9 +152,10 @@ function mapCoords(link) {
   const at = [Number(m[1]), Number(m[2])];
   return at[0] > 1.15 && at[0] < 1.48 && at[1] > 103.6 && at[1] < 104.1 ? at : null;
 }
+// ('' when none is within about 3 km, 0.027 degrees: the team picks)
 const nearestArea = at => Object.entries(PARTNER_AREA_CENTRES)
   .reduce((best, [area, c]) => { const d = (c[0] - at[0]) ** 2 + (c[1] - at[1]) ** 2; return d < best.d ? { area, d } : best; },
-          { area: "", d: Infinity }).area;
+          { area: "", d: 0.027 ** 2 }).area;
 const PARTNER_MAX_INTERESTS = 5;
 // A partner's interests: one number of DATING_INTERESTS bits, as dating.profiles keeps them, as a list of bits
 const interestBits = mask => DATING_INTERESTS.flatMap((_, i) => ((Number(mask) >>> i) & 1) === 1 ? [i] : []);
@@ -992,9 +1002,12 @@ pField("photo-remove").addEventListener("click", () => { partnerPhoto = ""; show
 pField("map").addEventListener("input", () => {
   const link = pField("map").value.trim(), note = pField("map-note"), at = mapCoords(link);
   note.hidden = !link;
-  if (at) {
-    pField("area").value = nearestArea(at);
-    note.textContent = `Area set to ${pField("area").value} from the link. Change it below if it's wrong.`;
+  const area = at && nearestArea(at);
+  if (area) {
+    pField("area").value = area;
+    note.textContent = `Area set to ${area} from the link. Change it below if it's wrong.`;
+  } else if (at) {
+    note.textContent = "No area on the list is close to this place: pick the nearest below.";
   } else {
     note.textContent = MAP_LINK.test(link) ? "This link has no location in it (a short share link): pick the area below."
                                            : "That isn't a Google Maps link.";
