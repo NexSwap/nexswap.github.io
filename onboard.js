@@ -97,11 +97,12 @@ const DATE_REASONS = { 0: "You both run", 1: "You both hike", 4: "You both climb
 // Date partners: venues that agreed a perk for matched pairs, typed in by the team on the Partners tab (dating.partners
 // in schema.sql, read with date_partners: live ones, public fields only). Only these carry a perk; a shared interest
 // picks a partner before any DATE_SPOTS spot. interests: DATING_INTERESTS bits; book: the venue's booking page, optional
-// (else Map only, and Use opens the voucher). This list is only used until the database has partners (the migration
-// not run yet, or offline).
+// (else Map only, and Use opens the voucher); map: its Google Maps link, optional (else Map searches name and area);
+// promo: a code the venue gave NexSwap couples, optional. This list is only used until the database has partners (the
+// migration not run yet, or offline).
 let datePartners = [
   { name: "The Cat Cafe", kind: "Café", area: "Bugis", interests: [27, 21], perk: "Free drink top-ups",
-    claim: "Mention NexSwap when booking", book: "https://thecatcafe.sg" },
+    claim: "Mention NexSwap when booking", book: "https://thecatcafe.sg", map: "", promo: "" },
 ];
 // The Partners tab's fixed lists: save_partner in schema.sql checks against the same ones (keep them the same)
 const PARTNER_KINDS = ["Café", "Bar", "Restaurant", "Activity", "Workshop", "Fitness", "Outdoors", "Culture"];
@@ -110,7 +111,41 @@ const PARTNER_AREAS = ["Bishan", "Boat Quay", "Bugis", "Bukit Timah", "Buona Vis
   "Joo Chiat / Katong", "Jurong", "Kallang", "Kampong Glam", "Little India", "Marina Bay", "Novena", "Orchard",
   "Pasir Panjang", "Paya Lebar", "Pulau Ubin", "Punggol", "Raffles Place", "River Valley", "Robertson Quay", "Sentosa",
   "Serangoon", "Tampines", "Tanjong Pagar", "Telok Ayer", "Tiong Bahru"];
-const PARTNER_CLAIMS = ["Mention NexSwap when booking", "Mention NexSwap when you arrive", "Show your match screen"];
+const PROMO_CLAIM = "Use the promo code when booking";   // (save_partner: needs a promo code)
+const PARTNER_CLAIMS = ["Mention NexSwap when booking", "Mention NexSwap when you arrive", "Show your match screen",
+  PROMO_CLAIM];
+// Rough middles of PARTNER_AREAS (keep them in step; not Islandwide), [lat, lng]: the area a Maps link's coordinates
+// are nearest to (nearestArea)
+const PARTNER_AREA_CENTRES = {
+  "Bishan": [1.3508, 103.8485], "Boat Quay": [1.2867, 103.8490], "Bugis": [1.3008, 103.8559],
+  "Bukit Timah": [1.3294, 103.8021], "Buona Vista": [1.3071, 103.7903], "Chinatown": [1.2836, 103.8443],
+  "City Hall": [1.2931, 103.8520], "Clarke Quay": [1.2906, 103.8465], "Dempsey": [1.3043, 103.8098],
+  "Dhoby Ghaut": [1.2990, 103.8455], "East Coast": [1.3010, 103.9120], "Farrer Park": [1.3124, 103.8541],
+  "Holland Village": [1.3113, 103.7958], "Jalan Besar": [1.3105, 103.8600], "Joo Chiat / Katong": [1.3080, 103.9020],
+  "Jurong": [1.3330, 103.7420], "Kallang": [1.3100, 103.8710], "Kampong Glam": [1.3025, 103.8590],
+  "Little India": [1.3066, 103.8518], "Marina Bay": [1.2820, 103.8585], "Novena": [1.3204, 103.8438],
+  "Orchard": [1.3040, 103.8318], "Pasir Panjang": [1.2760, 103.7910], "Paya Lebar": [1.3180, 103.8930],
+  "Pulau Ubin": [1.4044, 103.9625], "Punggol": [1.4043, 103.9020], "Raffles Place": [1.2840, 103.8515],
+  "River Valley": [1.2950, 103.8350], "Robertson Quay": [1.2905, 103.8390], "Sentosa": [1.2494, 103.8303],
+  "Serangoon": [1.3500, 103.8730], "Tampines": [1.3540, 103.9440], "Tanjong Pagar": [1.2765, 103.8455],
+  "Telok Ayer": [1.2820, 103.8485], "Tiong Bahru": [1.2860, 103.8270] };
+// A Google Maps link, as save_partner takes it
+const MAP_LINK = /^https:\/\/(maps\.app\.goo\.gl|goo\.gl\/maps|maps\.google\.[a-z.]+|(www\.)?google\.[a-z.]+\/maps)[/?]\S*$/;
+const PROMO_CODE = /^[A-Za-z0-9_-]{0,30}$/;   // (save_partner's check)
+// The place's [lat, lng] in a long Maps link (copied from a computer's address bar): its pin (!3d..!4d..), else where
+// the map was (@lat,lng), else a q=lat,lng search. null when there's none (a short share link) or it isn't in Singapore.
+function mapCoords(link) {
+  let url = link;
+  try { url = decodeURIComponent(link); } catch (err) {}
+  const m = url.match(/!3d(-?\d+\.\d+)!4d(-?\d+\.\d+)/) || url.match(/@(-?\d+\.\d+),(-?\d+\.\d+)/) ||
+            url.match(/[?&](?:q|ll|query|center|destination)=(-?\d+\.\d+),\s*(-?\d+\.\d+)/);
+  if (!m || !MAP_LINK.test(link)) return null;
+  const at = [Number(m[1]), Number(m[2])];
+  return at[0] > 1.15 && at[0] < 1.48 && at[1] > 103.6 && at[1] < 104.1 ? at : null;
+}
+const nearestArea = at => Object.entries(PARTNER_AREA_CENTRES)
+  .reduce((best, [area, c]) => { const d = (c[0] - at[0]) ** 2 + (c[1] - at[1]) ** 2; return d < best.d ? { area, d } : best; },
+          { area: "", d: Infinity }).area;
 const PARTNER_MAX_INTERESTS = 5;
 // A partner's interests: one number of DATING_INTERESTS bits, as dating.profiles keeps them, as a list of bits
 const interestBits = mask => DATING_INTERESTS.flatMap((_, i) => ((Number(mask) >>> i) & 1) === 1 ? [i] : []);
@@ -796,8 +831,8 @@ function useDemoPartners() {
   if (DATING && dating.demo) drawDating();
 }
 const DEMO_PARTNERS = [{ id: 1, name: "The Cat Cafe", kind: "Café", area: "Bugis", interests: 2 ** 27 + 2 ** 21,
-  perk: "Free drink top-ups", claim: "Mention NexSwap when booking", book: "https://thecatcafe.sg", live: true,
-  contact_name: "Jefferson Soh", contact_phone: "", notes: "Sample: the demo saves nothing" }];
+  perk: "Free drink top-ups", claim: "Mention NexSwap when booking", book: "https://thecatcafe.sg", map: "", promo: "",
+  live: true, contact_name: "Jefferson Soh", contact_phone: "", notes: "Sample: the demo saves nothing" }];
 let partnerPhoto = null;   // a photo chosen or removed ('') in the form; null: the partner's own, unchanged
 const partnerForm = document.getElementById("partner-form");
 const pField = id => document.getElementById("p-" + id);
@@ -870,6 +905,9 @@ function openPartner(p) {
   pField("perk").value = p.perk || "";
   pField("claim").value = p.claim || "";
   pField("book").value = p.book || "";
+  pField("map").value = p.map || "";
+  pField("map-note").hidden = true;
+  pField("promo").value = p.promo || "";
   pField("live").checked = p.live ?? true;
   pField("contact-name").value = p.contact_name || "";
   pField("contact-phone").value = p.contact_phone || "";
@@ -889,7 +927,8 @@ function openPartner(p) {
 function partnerFromForm() {
   return { ...(partnerPhoto === null ? {} : { photo: partnerPhoto }), name: pField("name").value.trim(), kind: pField("kind").value, area: pField("area").value,
            interests: partnerBits().reduce((mask, b) => mask + 2 ** b, 0), perk: pField("perk").value.trim(),
-           claim: pField("claim").value, book: pField("book").value.trim(), live: pField("live").checked,
+           claim: pField("claim").value, book: pField("book").value.trim(), map: pField("map").value.trim(),
+           promo: pField("promo").value.trim(), live: pField("live").checked,
            contact_name: pField("contact-name").value.trim(), contact_phone: pField("contact-phone").value.trim(),
            notes: pField("notes").value.trim() };
 }
@@ -899,7 +938,7 @@ function previewPartner() {
   const p = partnerFromForm(), bits = partnerBits();
   pField("preview").replaceChildren(dateIdeasBox([{ name: p.name || "Venue name", kind: p.kind || "Type", area: p.area,
     why: DATE_REASONS[bits[0]] || "Something you both like", perk: p.perk || "Your perk", claim: p.claim, book: p.book,
-    partner: true }], "First date idea", null));
+    map: MAP_LINK.test(p.map) ? p.map : "", promo: p.promo, partner: true }], "First date idea", null));
 }
 
 // The venue photo: the one in the form, else the partner's own
@@ -940,10 +979,24 @@ pField("photo-file").addEventListener("change", async e => {
   showPartnerPhoto();
 });
 pField("photo-remove").addEventListener("click", () => { partnerPhoto = ""; showPartnerPhoto(); });
+// The Maps link: a long one has the place's coordinates, so the area fills in from them (and can still be changed); a
+// short share link (maps.app.goo.gl) has none, so the team picks it. (Before the form's own input listener: the preview
+// shows the new area.)
+pField("map").addEventListener("input", () => {
+  const link = pField("map").value.trim(), note = pField("map-note"), at = mapCoords(link);
+  note.hidden = !link;
+  if (at) {
+    pField("area").value = nearestArea(at);
+    note.textContent = `Area set to ${pField("area").value} from the link. Change it below if it's wrong.`;
+  } else {
+    note.textContent = MAP_LINK.test(link) ? "This link has no location in it (a short share link): pick the area below."
+                                           : "That isn't a Google Maps link.";
+  }
+});
 // The real redeem card with what's in the form, and a sample match
 pField("voucher").addEventListener("click", () => {
   const p = partnerFromForm();
-  openVoucher({ name: p.name || "Venue name", perk: p.perk || "Your perk", claim: p.claim, photo: formPhoto() },
+  openVoucher({ name: p.name || "Venue name", perk: p.perk || "Your perk", claim: p.claim, promo: p.promo, photo: formPhoto() },
               { first: "Sam", tagId: "preview" });   // (a sample match)
 });
 
@@ -957,6 +1010,15 @@ partnerForm.addEventListener("submit", async e => {
     const p = partnerFromForm();
     if (!p.name || !p.kind || !p.area || !p.interests || !p.perk || !p.claim) {
       setStatus("Demo: fill in the name, type, area, 1 to 3 interests, perk and how to claim it.", "err");
+      return;
+    }
+    if (p.map && !MAP_LINK.test(p.map)) { setStatus("Demo: the map link must be a Google Maps link.", "err"); return; }
+    if (!PROMO_CODE.test(p.promo)) {
+      setStatus("Demo: the promo code: up to 30 letters, numbers, - or _, no spaces.", "err");
+      return;
+    }
+    if (p.claim === PROMO_CLAIM && !p.promo) {
+      setStatus("Demo: type the promo code, or pick another way to claim it.", "err");
       return;
     }
     const id = editingPartner.id ?? Math.max(0, ...teamPartners.map(x => x.id)) + 1;
@@ -1634,8 +1696,9 @@ function dateIdeas(card) {
   return ideas.slice(0, 3);
 }
 
-// A box of first-date spots, each with a Google Maps search (phones open the Maps app) and, for a partner that takes
-// bookings, Book; under a partner, its perk and how to claim it, with Use (the redeem card, openVoucher)
+// A box of first-date spots, each with Map (the partner's own Maps link, else a Google Maps search; phones open the Maps
+// app) and, for a partner that takes bookings, Book; under a partner, its perk, how to claim it and its promo code, with
+// Use (the redeem card, openVoucher)
 function dateIdeasBox(ideas, label, card) {
   const box = el("div", "d-idea");
   box.append(el("p", "d-label", label));
@@ -1644,7 +1707,7 @@ function dateIdeasBox(ideas, label, card) {
     text.append(el("strong", "", idea.name), el("span", "d-idea-where", `${idea.kind} · ${idea.area || "nearest outlet"}`),
                 el("span", "d-idea-why", idea.why));
     const acts = el("div", "d-idea-acts"), map = el("a", "d-idea-map", "Map");
-    map.href = "https://www.google.com/maps/search/?api=1&query=" +
+    map.href = idea.map || "https://www.google.com/maps/search/?api=1&query=" +
                encodeURIComponent([idea.name, idea.area, "Singapore"].filter(Boolean).join(", "));
     map.target = "_blank";
     map.rel = "noopener";
@@ -1669,7 +1732,9 @@ function dateIdeasBox(ideas, label, card) {
       use.type = "button";
       use.setAttribute("aria-label", `Use the perk at ${idea.name}: ${idea.perk}`);
       use.addEventListener("click", () => openVoucher(idea, card));
-      perk.append(el("span", "", idea.claim ? `${idea.perk} · ${idea.claim}` : idea.perk), use);
+      const how = idea.claim === PROMO_CLAIM && idea.promo ? [`Use code ${idea.promo} when booking`]
+                                                            : [idea.claim, idea.promo && `Code ${idea.promo}`];
+      perk.append(el("span", "", [idea.perk, ...how].filter(Boolean).join(" · ")), use);
       spot.append(perk);
     }
   }
@@ -1677,15 +1742,10 @@ function dateIdeasBox(ideas, label, card) {
 }
 
 // A pair perk, full screen: the spot, both faces, the perk, valid-until with a ticking clock (so staff can tell it's not a
-// screenshot), and Hold to redeem: held for 1.2 s, in front of staff, it gives way to the code with where and when.
-// A mockup like the spots: the code is made here from the pair and the spot, and a redeem is only remembered on this
-// page (a real one would be recorded per pair in Supabase, so each perk is used once)
-const redeemedPerks = new Map();   // code -> when it was redeemed
-function perkCode(idea, card) {
-  let h = 7;
-  for (const ch of `${card.matchId || card.tagId || card.first}|${idea.name}`) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
-  return "NX-" + h.toString(36).toUpperCase().slice(-4).padStart(4, "0");
-}
+// screenshot), and Hold to redeem: held for 1.2 s, it gives way to Redeemed with where and when, and the venue's promo
+// code with Copy when it has one (Partners tab). A redeem is only remembered on this page (a real one would be recorded
+// per pair in Supabase, so each perk is used once)
+const redeemedPerks = new Map();   // pair|venue -> when it was redeemed
 // A partner's photo for its redeem card: the one it came with (the Partners tab's preview, the demo), else from the
 // database once per partner (partner_photo in schema.sql: only when a card opens, not with the list). "" when none.
 const venuePhotos = new Map();
@@ -1706,7 +1766,7 @@ function closeVoucher() {
 }
 function openVoucher(idea, card) {
   closeVoucher();
-  const code = perkCode(idea, card), until = new Date(Date.now() + 30 * 864e5);
+  const key = `${card.matchId || card.tagId || card.first}|${idea.name}`, until = new Date(Date.now() + 30 * 864e5);
   const v = el("div", "d-voucher");
   v.setAttribute("role", "dialog");
   v.setAttribute("aria-modal", "true");
@@ -1738,11 +1798,29 @@ function openVoucher(idea, card) {
   tick();
   v.clockTimer = setInterval(tick, 1000);
 
-  const hold = el("button", "d-vhold"), note = el("p", "d-vfine", "Show staff, then hold. One use only.");
+  const hold = el("button", "d-vhold");
+  const note = el("p", "d-vfine", idea.promo ? "Hold to get your code. One use only." : "Show staff, then hold. One use only.");
   hold.type = "button";
   hold.append(el("i"), el("span", "", "Hold to redeem"));
   const done = el("div", "d-vdone"), when = el("p", "d-vfine");
-  done.append(el("p", "d-vdone-t", "✓ Redeemed"), el("div", "d-vcode", code), when);
+  done.append(el("p", "d-vdone-t", "✓ Redeemed"));
+  if (idea.promo) {   // the venue's code, to type when booking
+    const row = el("div", "d-vcode-row"), copy = el("button", "d-vcopy", "Copy");
+    copy.type = "button";
+    copy.setAttribute("aria-label", `Copy the promo code ${idea.promo}`);
+    copy.addEventListener("click", async () => {
+      try {
+        await navigator.clipboard.writeText(idea.promo);
+        copy.textContent = "Copied";
+      } catch (err) {
+        copy.textContent = "Couldn't copy";
+      }
+      setTimeout(() => { copy.textContent = "Copy"; }, 1500);
+    });
+    row.append(el("div", "d-vcode", idea.promo), copy);
+    done.append(row);
+  }
+  done.append(when);
   const showDone = at => {
     when.textContent = `${idea.name} · ${at.toLocaleDateString("en-SG", { day: "numeric", month: "short" })}, ` +
                        at.toLocaleTimeString("en-SG", { hour: "2-digit", minute: "2-digit", hour12: false });
@@ -1757,7 +1835,7 @@ function openVoucher(idea, card) {
     hold.classList.add("on");
     timer = setTimeout(() => {
       const at = new Date();
-      redeemedPerks.set(code, at);
+      redeemedPerks.set(key, at);
       try { navigator.vibrate?.(30); } catch (err) {}
       showDone(at);
     }, 1200);
@@ -1767,7 +1845,7 @@ function openVoucher(idea, card) {
   hold.addEventListener("keydown", start);
   for (const type of ["pointerup", "pointerleave", "pointercancel", "keyup", "blur"]) hold.addEventListener(type, stop);
   hold.addEventListener("contextmenu", e => e.preventDefault());   // a long press on a phone shouldn't open a menu
-  if (redeemedPerks.has(code)) showDone(redeemedPerks.get(code));
+  if (redeemedPerks.has(key)) showDone(redeemedPerks.get(key));
 
   body.append(el("p", "d-vwho", `${card.first} & you · first date`), el("div", "d-vbanner", idea.perk));
   if (idea.claim) body.append(el("p", "d-vfine d-vclaim", idea.claim));

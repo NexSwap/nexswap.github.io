@@ -324,6 +324,7 @@
   .p-photo-acts { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
   .p-photo-acts svg { width: 18px; height: 18px; }
   .p-voucher { width: 100%; margin: 0 0 16px; }
+  .p-map-note { color: var(--accent-hi); }
   .d-idea-row { display: flex; align-items: center; gap: 10px; }
   .d-idea-spot + .d-idea-spot { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--border); }
   .d-idea-text { flex: 1; min-width: 0; display: grid; gap: 2px; }
@@ -375,6 +376,11 @@
   .d-vdone { margin-top: 16px; padding: 14px 12px; border-radius: 14px; background: #3ddc8422; border: 1.5px solid var(--ok); }
   .d-vdone-t { margin: 0; color: var(--ok); font: 13px/1.4 var(--pixel); letter-spacing: .08em; text-transform: uppercase; }
   .d-vcode { margin: 6px 0 4px; font: 700 34px/1.1 ui-monospace, monospace; letter-spacing: .14em; }
+  /* The venue's promo code (Partners tab) once redeemed, to type when booking, with Copy beside it */
+  .d-vcode-row { display: flex; align-items: center; justify-content: center; gap: 12px; margin: 6px 0 4px; }
+  .d-vcode-row .d-vcode { margin: 0; min-width: 0; font-size: 26px; letter-spacing: .08em; overflow-wrap: anywhere; }
+  .d-vcopy { flex: none; min-height: 36px; padding: 0 14px; border: 0; border-radius: 999px; background: #ffc56b; color: #2a1438;
+             font-size: 13px; font-weight: 700; cursor: pointer; }
   @media (prefers-reduced-motion: no-preference) {
     .d-voucher { animation: d-fadein .2s ease-out; }
     .d-vdone { animation: d-redeem .35s ease-out; }
@@ -926,12 +932,21 @@
       <h2 id="partner-form-title">New partner</h2>
       <label class="field"><span>Name</span><input type="text" id="p-name" maxlength="60" autocomplete="off"></label>
       <label class="field"><span>Type</span><select id="p-kind"></select></label>
-      <label class="field"><span>Area</span><select id="p-area"></select></label>
+      <label class="field"><span>Google Maps link (optional)</span>
+        <p class="hint" id="p-map-hint" style="margin:0 0 8px">Where Map takes couples. Copied from the address bar on a computer, it also fills in the area.</p>
+        <input type="url" id="p-map" maxlength="500" placeholder="https://maps.app.goo.gl/..." autocomplete="off" autocapitalize="none" spellcheck="false"
+               aria-describedby="p-map-hint p-map-note">
+        <p class="hint p-map-note" id="p-map-note" aria-live="polite" hidden></p></label>
+      <label class="field"><span>Area (shown to couples)</span><select id="p-area"></select></label>
       <div class="field"><span id="p-interests-label">Interests (1 to 5)</span>
         <p class="hint" style="margin:0">Couples who both picked one of these get this partner first.</p>
         <div class="chips" id="p-interests" role="group" aria-labelledby="p-interests-label"></div></div>
       <label class="field"><span>Perk</span><input type="text" id="p-perk" maxlength="80" placeholder="Free drink top-ups" autocomplete="off"></label>
       <label class="field"><span>How to claim it</span><select id="p-claim"></select></label>
+      <label class="field"><span>Promo code (optional)</span>
+        <p class="hint" id="p-promo-hint" style="margin:0 0 8px">The code the venue gave NexSwap couples. Shown with the perk, and on the redeem card once they redeem.</p>
+        <input type="text" id="p-promo" maxlength="30" placeholder="NEXSWAP" autocomplete="off" autocapitalize="characters" spellcheck="false"
+               aria-describedby="p-promo-hint"></label>
       <label class="field"><span>Booking link (optional)</span>
         <input type="url" id="p-book" maxlength="300" placeholder="https://" autocomplete="off" autocapitalize="none" spellcheck="false"></label>
       <div class="field"><span>Venue photo (optional)</span>
