@@ -933,12 +933,15 @@ function partnerFromForm() {
            notes: pField("notes").value.trim() };
 }
 
-// The partner as a matched couple would see it (dateIdeasBox), redrawn as the form changes
+// The partner as a matched couple would see it (dateIdeasBox), redrawn as the form changes. Map and Book open the links
+// in a new tab, to check them; Use is off here (Preview the redeem card does that)
 function previewPartner() {
   const p = partnerFromForm(), bits = partnerBits();
   pField("preview").replaceChildren(dateIdeasBox([{ name: p.name || "Venue name", kind: p.kind || "Type", area: p.area,
-    why: DATE_REASONS[bits[0]] || "Something you both like", perk: p.perk || "Your perk", claim: p.claim, book: p.book,
+    why: DATE_REASONS[bits[0]] || "Something you both like", perk: p.perk || "Your perk", claim: p.claim,
+    book: /^https:\/\/\S+$/.test(p.book) ? p.book : "",
     map: MAP_LINK.test(p.map) ? p.map : "", promo: p.promo, partner: true }], "First date idea", null));
+  pField("preview").querySelectorAll(".d-perk-use").forEach(b => { b.tabIndex = -1; b.setAttribute("aria-hidden", "true"); });
 }
 
 // The venue photo: the one in the form, else the partner's own

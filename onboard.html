@@ -318,7 +318,7 @@
   .p-form textarea:focus { outline: 2px solid var(--accent-hi); border-color: transparent; }
   .p-team { margin: 24px 0 0; font-size: 15px; color: var(--dim); }
   .p-preview-label { margin: 24px 0 8px; }
-  .p-preview { pointer-events: none; }
+  .p-preview .d-perk-use { pointer-events: none; }   /* Map and Book work (new tab); Use is the button below */
   .p-actions { display: grid; grid-template-columns: 2fr 1fr; gap: 8px; margin: 8px 0 0; }
   .p-photo { display: block; width: 100%; aspect-ratio: 2 / 1; object-fit: cover; border-radius: 12px; border: 1px solid var(--border); margin: 0 0 8px; }
   .p-photo-acts { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
@@ -961,7 +961,7 @@
       <label class="field"><span>WhatsApp or phone</span><input type="text" id="p-contact-phone" maxlength="30" inputmode="tel" autocomplete="off"></label>
       <label class="field"><span>Notes</span><textarea id="p-notes" maxlength="1000" rows="3"></textarea></label>
       <p class="d-label p-preview-label">How couples see it</p>
-      <div id="p-preview" class="p-preview" aria-hidden="true"></div>
+      <div id="p-preview" class="p-preview"></div>
       <button id="p-voucher" class="btn btn-ghost p-voucher" type="button">Preview the redeem card</button>
       <div class="p-actions">
         <button id="p-save" class="btn btn-primary" type="submit">Save</button>
