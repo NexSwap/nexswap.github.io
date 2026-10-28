@@ -1700,8 +1700,8 @@ function dateIdeas(card) {
 }
 
 // A box of first-date spots, each with Map (the partner's own Maps link, else a Google Maps search; phones open the Maps
-// app) and, for a partner that takes bookings, Book; under a partner, its perk, how to claim it and its promo code, with
-// Use (the redeem card, openVoucher)
+// app) and, for a partner that takes bookings, Book; under a partner, its perk and how to claim it, and for a partner
+// with a promo code, Use (the redeem card, openVoucher: the code shows there only once redeemed, never here)
 function dateIdeasBox(ideas, label, card) {
   const box = el("div", "d-idea");
   box.append(el("p", "d-label", label));
@@ -1731,13 +1731,14 @@ function dateIdeasBox(ideas, label, card) {
     box.append(spot);
     if (idea.perk) {
       const perk = el("div", "d-perk");
-      const use = el("button", "d-perk-use", "Use");
-      use.type = "button";
-      use.setAttribute("aria-label", `Use the perk at ${idea.name}: ${idea.perk}`);
-      use.addEventListener("click", () => openVoucher(idea, card));
-      const how = idea.claim === PROMO_CLAIM && idea.promo ? [`Use code ${idea.promo} when booking`]
-                                                            : [idea.claim, idea.promo && `Code ${idea.promo}`];
-      perk.append(el("span", "", [idea.perk, ...how].filter(Boolean).join(" · ")), use);
+      perk.append(el("span", "", idea.claim ? `${idea.perk} · ${idea.claim}` : idea.perk));
+      if (idea.promo) {
+        const use = el("button", "d-perk-use", "Use");
+        use.type = "button";
+        use.setAttribute("aria-label", `Use the perk at ${idea.name}: ${idea.perk}`);
+        use.addEventListener("click", () => openVoucher(idea, card));
+        perk.append(use);
+      }
       spot.append(perk);
     }
   }
