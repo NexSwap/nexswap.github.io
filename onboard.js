@@ -96,10 +96,10 @@ const DATE_REASONS = { 0: "You both run", 1: "You both hike", 4: "You both climb
   26: "You're both dog people", 27: "You're both cat people", 28: "You both like coffee dates", 29: "You both like drinks dates" };
 // Date partners: venues that agreed a perk for matched pairs, typed in by the team on the Partners tab (dating.partners
 // in schema.sql, read with date_partners: live ones, public fields only). Only these carry a perk; a shared interest
-// picks a partner before any DATE_SPOTS spot. interests: DATING_INTERESTS bits; book: the venue's booking page, optional
-// (else Map only, and Use opens the voucher); map: its Google Maps link, optional (else Map searches name and area);
-// promo: a code the venue gave NexSwap couples, optional. This list is only used until the database has partners (the
-// migration not run yet, or offline).
+// picks a partner before any DATE_SPOTS spot. interests: DATING_INTERESTS bits; book: the venue's booking page, or a
+// wa.me link with its message (waLink), optional (else Map only, and Use opens the voucher); map: its Google Maps link,
+// optional (else Map searches name and area); promo: a code the venue gave NexSwap couples, optional. This list is only
+// used until the database has partners (the migration not run yet, or offline).
 let datePartners = [
   { name: "The Cat Cafe", kind: "Café", area: "Bugis", interests: [27, 21], perk: "Free drink top-ups",
     claim: "Mention NexSwap when booking", book: "https://thecatcafe.sg", map: "", promo: "" },
@@ -141,6 +141,25 @@ const PARTNER_AREA_CENTRES = {
 // A Google Maps link, as save_partner takes it
 const MAP_LINK = /^https:\/\/(maps\.app\.goo\.gl|goo\.gl\/maps|maps\.google\.[a-z.]+|(www\.)?google\.[a-z.]+\/maps)[/?]\S*$/;
 const PROMO_CODE = /^[A-Za-z0-9_-]{0,30}$/;   // (save_partner's check)
+// A partner that books on WhatsApp: the team types the number and a message (this, unless they change it), and book is
+// the wa.me link that opens a chat with the message typed
+const WA_TEXT = "Hi! NexSwap sent me your way, and I'd like to make a booking.";
+const BOOK_MAX = 300;   // (dating.partners.book's limit: a long message makes the link too long)
+// The number as wa.me takes it, digits only: 8 Singapore digits get 65 in front; 10 to 15 already have a country code.
+// "" when it's neither.
+function waNumber(text) {
+  const n = text.replace(/[\s()+-]/g, "");
+  if (/^[3689]\d{7}$/.test(n)) return "65" + n;
+  return /^\d{10,15}$/.test(n) ? n : "";
+}
+function waLink(number, text) {
+  return `https://wa.me/${number}` + (text ? "?text=" + encodeURIComponent(text) : "");
+}
+// { number, text } from a wa.me link, else null
+function parseWa(link) {
+  const m = /^https:\/\/wa\.me\/(\d{8,15})\/?(\?.*)?$/.exec(link || "");
+  return m && { number: m[1], text: new URLSearchParams(m[2] || "").get("text") || "" };
+}
 // The place's [lat, lng] in a long Maps link (copied from a computer's address bar): its pin (!3d..!4d..), else where
 // the map was (@lat,lng), else a q=lat,lng search. null when there's none (a short share link) or it isn't in Singapore.
 function mapCoords(link) {
@@ -914,7 +933,13 @@ function openPartner(p) {
   document.querySelectorAll("#p-interests input").forEach(b => b.checked = bits.includes(Number(b.value)));
   pField("perk").value = p.perk || "";
   pField("claim").value = p.claim || "";
-  pField("book").value = p.book || "";
+  const wa = parseWa(p.book);   // (how they book: from the link)
+  pField("book-how").value = wa ? "wa" : p.book ? "link" : "";
+  pField("book").value = wa ? "" : p.book || "";
+  pField("book-wa").value = !wa ? "" : wa.number.startsWith("65") && wa.number.length === 10
+    ? `+65 ${wa.number.slice(2, 6)} ${wa.number.slice(6)}` : "+" + wa.number;
+  pField("book-text").value = wa ? wa.text : "";
+  showBookFields();
   pField("map").value = p.map || "";
   pField("map-note").hidden = true;
   pField("promo").value = p.promo || "";
@@ -937,10 +962,31 @@ function openPartner(p) {
 function partnerFromForm() {
   return { ...(partnerPhoto === null ? {} : { photo: partnerPhoto }), name: pField("name").value.trim(), kind: pField("kind").value, area: pField("area").value,
            interests: partnerBits().reduce((mask, b) => mask + 2 ** b, 0), perk: pField("perk").value.trim(),
-           claim: pField("claim").value, book: pField("book").value.trim(), map: pField("map").value.trim(),
+           claim: pField("claim").value, book: bookFromForm(), map: pField("map").value.trim(),
            promo: pField("promo").value.trim(), live: pField("live").checked,
            contact_name: pField("contact-name").value.trim(), contact_phone: pField("contact-phone").value.trim(),
            notes: pField("notes").value.trim() };
+}
+
+// How couples book, as the book link: the URL, the wa.me link (built from the number and message; "" when the number
+// isn't one), or "" for no booking
+function bookFromForm() {
+  const how = pField("book-how").value, number = waNumber(pField("book-wa").value);
+  if (how === "wa") return number ? waLink(number, pField("book-text").value.trim()) : "";
+  return how === "link" ? pField("book").value.trim() : "";
+}
+
+// Only the fields for how couples book, and under WhatsApp's the link it makes
+function showBookFields() {
+  const how = pField("book-how").value, typed = pField("book-wa").value.trim();
+  pField("book-link-field").hidden = how !== "link";
+  pField("book-wa-fields").hidden = how !== "wa";
+  const link = pField("book-wa-link");
+  const tooLong = !!waNumber(typed) && bookFromForm().length > BOOK_MAX;
+  link.classList.toggle("bad", (!!typed && !waNumber(typed)) || tooLong);
+  link.textContent = !typed ? "Type the number and the link is made for you."
+                   : !waNumber(typed) ? "That isn't a WhatsApp number: 8 digits, or + and the country code."
+                   : tooLong ? "Message too long: make it shorter." : bookFromForm();
 }
 
 // The partner as a matched couple would see it (dateIdeasBox), redrawn as the form changes. Map and Book open the links
@@ -1020,12 +1066,23 @@ pField("voucher").addEventListener("click", () => {
               { first: "Sam", tagId: "preview" });   // (a sample match)
 });
 
-partnerForm.addEventListener("input", () => { limitPartnerChips(); previewPartner(); });
+partnerForm.addEventListener("input", () => { limitPartnerChips(); showBookFields(); previewPartner(); });
+// Picking WhatsApp starts the message with WA_TEXT (after the input listener: redrawn again with it)
+pField("book-how").addEventListener("change", () => {
+  if (pField("book-how").value === "wa" && !pField("book-text").value.trim()) pField("book-text").value = WA_TEXT;
+  showBookFields();
+  previewPartner();
+});
 document.getElementById("partner-add").addEventListener("click", () => openPartner({}));
 pField("cancel").addEventListener("click", () => { editingPartner = null; setStatus(""); drawPartners(); });
 partnerForm.addEventListener("submit", async e => {
   e.preventDefault();
   const save = pField("save");
+  if (pField("book-how").value === "wa" && !waNumber(pField("book-wa").value)) {
+    setStatus("Type the venue's WhatsApp number, e.g. 9123 4567.", "err");
+    return;
+  }
+  if (bookFromForm().length > BOOK_MAX) { setStatus("The WhatsApp message is too long: make it shorter.", "err"); return; }
   if (DEMO_TEAM) {   // (only the gaps the database would refuse: the demo can't ask it)
     const p = partnerFromForm();
     if (!p.name || !p.kind || !p.area || !p.interests || !p.perk || !p.claim) {
@@ -1740,7 +1797,7 @@ function dateIdeasBox(ideas, label, card) {
       book.href = idea.book;
       book.target = "_blank";
       book.rel = "noopener";
-      book.setAttribute("aria-label", `Book ${idea.name}`);
+      book.setAttribute("aria-label", parseWa(idea.book) ? `Book ${idea.name} on WhatsApp` : `Book ${idea.name}`);
       book.append(icon("fa-back"));
       acts.append(book);
     }
