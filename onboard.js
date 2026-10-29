@@ -141,9 +141,10 @@ const PARTNER_AREA_CENTRES = {
 // A Google Maps link, as save_partner takes it
 const MAP_LINK = /^https:\/\/(maps\.app\.goo\.gl|goo\.gl\/maps|maps\.google\.[a-z.]+|(www\.)?google\.[a-z.]+\/maps)[/?]\S*$/;
 const PROMO_CODE = /^[A-Za-z0-9_-]{0,30}$/;   // (save_partner's check)
-// A partner that books on WhatsApp: the team types the number and a message (this, unless they change it), and book is
-// the wa.me link that opens a chat with the message typed
-const WA_TEXT = "Hi! NexSwap sent me your way, and I'd like to make a booking.";
+// A partner that books on WhatsApp: the team types the number and a message (this, with the venue's name, unless they
+// change it), and book is the wa.me link that opens a chat with the message typed
+const waText = name => `Hi${name ? " " + name : ""}, NexSwap sent me your way and I'd like to make a booking.`;
+let waDefault = "";   // the default last put in the message box (waText)
 const BOOK_MAX = 300;   // (dating.partners.book's limit: a long message makes the link too long)
 // The number as wa.me takes it, digits only: 8 Singapore digits get 65 in front; 10 to 15 already have a country code.
 // "" when it's neither.
@@ -939,6 +940,7 @@ function openPartner(p) {
   pField("book-wa").value = !wa ? "" : wa.number.startsWith("65") && wa.number.length === 10
     ? `+65 ${wa.number.slice(2, 6)} ${wa.number.slice(6)}` : "+" + wa.number;
   pField("book-text").value = wa ? wa.text : "";
+  waDefault = waText(p.name || "");
   showBookFields();
   pField("map").value = p.map || "";
   pField("map-note").hidden = true;
@@ -1066,10 +1068,18 @@ pField("voucher").addEventListener("click", () => {
               { first: "Sam", tagId: "preview" });   // (a sample match)
 });
 
+// The message box's default follows the name until the team changes the message (waDefault; before the form's input
+// listener: the link and preview show the new name)
+pField("name").addEventListener("input", () => {
+  if (pField("book-text").value !== waDefault) return;
+  pField("book-text").value = waDefault = waText(pField("name").value.trim());
+});
 partnerForm.addEventListener("input", () => { limitPartnerChips(); showBookFields(); previewPartner(); });
-// Picking WhatsApp starts the message with WA_TEXT (after the input listener: redrawn again with it)
+// Picking WhatsApp starts the message with waText (after the input listener: redrawn again with it)
 pField("book-how").addEventListener("change", () => {
-  if (pField("book-how").value === "wa" && !pField("book-text").value.trim()) pField("book-text").value = WA_TEXT;
+  if (pField("book-how").value === "wa" && !pField("book-text").value.trim()) {
+    pField("book-text").value = waDefault = waText(pField("name").value.trim());
+  }
   showBookFields();
   previewPartner();
 });

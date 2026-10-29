@@ -313,7 +313,7 @@
              background: var(--accent); color: var(--text); }
   .p-item.paused .p-state { background: var(--surface-2); color: var(--dim); }
   .p-contact { display: block; margin: 2px 0 0; font-size: 14px; color: var(--dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .p-form textarea { width: 100%; padding: 12px 14px; border-radius: 12px; border: 1px solid var(--border);
+  .p-form textarea { display: block; width: 100%; padding: 12px 14px; border-radius: 12px; border: 1px solid var(--border);
                      background: var(--surface); color: var(--text); font: inherit; font-size: 16px; resize: vertical; }
   .p-form textarea:focus { outline: 2px solid var(--accent-hi); border-color: transparent; }
   .p-team { margin: 24px 0 0; font-size: 15px; color: var(--dim); }
@@ -325,7 +325,7 @@
   .p-photo-acts svg { width: 18px; height: 18px; }
   .p-voucher { width: 100%; margin: 0 0 16px; }
   .p-map-note { color: var(--accent-hi); }
-  .p-book-wa-link { margin: -8px 0 16px; overflow-wrap: anywhere; }   /* the built wa.me link: long, no spaces */
+  .p-book-wa-link { overflow-wrap: anywhere; }   /* the built wa.me link: long, no spaces */
   .d-idea-row { display: flex; align-items: center; gap: 10px; }
   .d-idea-spot + .d-idea-spot { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--border); }
   .d-idea-text { flex: 1; min-width: 0; display: grid; gap: 2px; }
@@ -968,8 +968,8 @@
                  aria-describedby="p-book-wa-hint"></label>
         <label class="field"><span>Message couples send</span>
           <p class="hint" id="p-book-text-hint" style="margin:0 0 8px">Already typed when the chat opens. They can change it before sending.</p>
-          <textarea id="p-book-text" maxlength="300" rows="3" aria-describedby="p-book-text-hint"></textarea></label>
-        <p class="hint p-book-wa-link" id="p-book-wa-link" aria-live="polite"></p></div>
+          <textarea id="p-book-text" maxlength="300" rows="3" aria-describedby="p-book-text-hint p-book-wa-link"></textarea>
+          <p class="hint p-book-wa-link" id="p-book-wa-link" aria-live="polite"></p></label></div>
       <div class="field"><span>Venue photo (optional)</span>
         <p class="hint" style="margin:0 0 8px">The background of the redeem card couples show staff. A wide photo works best.</p>
         <img id="p-photo-img" class="p-photo" alt="The venue photo" hidden>
