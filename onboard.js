@@ -141,10 +141,9 @@ const PARTNER_AREA_CENTRES = {
 // A Google Maps link, as save_partner takes it
 const MAP_LINK = /^https:\/\/(maps\.app\.goo\.gl|goo\.gl\/maps|maps\.google\.[a-z.]+|(www\.)?google\.[a-z.]+\/maps)[/?]\S*$/;
 const PROMO_CODE = /^[A-Za-z0-9_-]{0,30}$/;   // (save_partner's check)
-// A partner that books on WhatsApp: the team types the number and a message (this, with the venue's name, unless they
-// change it), and book is the wa.me link that opens a chat with the message typed
+// A partner that books on WhatsApp: the team types the number and, if they want, a message; book is the wa.me link that
+// opens a chat with it typed. Without a message the link has none, and Book types this, with the venue's name (bookHref)
 const waText = name => `Hi${name ? " " + name : ""}, NexSwap sent me your way and I'd like to make a booking.`;
-let waDefault = "";   // the default last put in the message box (waText)
 const BOOK_MAX = 300;   // (dating.partners.book's limit: a long message makes the link too long)
 // The number as wa.me takes it, digits only: 8 Singapore digits get 65 in front; 10 to 15 already have a country code.
 // "" when it's neither.
@@ -160,6 +159,11 @@ function waLink(number, text) {
 function parseWa(link) {
   const m = /^https:\/\/wa\.me\/(\d{8,15})\/?(\?.*)?$/.exec(link || "");
   return m && { number: m[1], text: new URLSearchParams(m[2] || "").get("text") || "" };
+}
+// Where a partner's Book goes: its link, and for a wa.me link without a message, with waText
+function bookHref(idea) {
+  const wa = parseWa(idea.book);
+  return wa && !wa.text ? waLink(wa.number, waText(idea.name)) : idea.book;
 }
 // The place's [lat, lng] in a long Maps link (copied from a computer's address bar): its pin (!3d..!4d..), else where
 // the map was (@lat,lng), else a q=lat,lng search. null when there's none (a short share link) or it isn't in Singapore.
@@ -939,8 +943,7 @@ function openPartner(p) {
   pField("book").value = wa ? "" : p.book || "";
   pField("book-wa").value = !wa ? "" : wa.number.startsWith("65") && wa.number.length === 10
     ? `+65 ${wa.number.slice(2, 6)} ${wa.number.slice(6)}` : "+" + wa.number;
-  pField("book-text").value = wa ? wa.text : "";
-  waDefault = waText(p.name || "");
+  pField("book-text").value = wa && wa.text !== waText(p.name) ? wa.text : "";   // (empty: the default)
   showBookFields();
   pField("map").value = p.map || "";
   pField("map-note").hidden = true;
@@ -970,25 +973,29 @@ function partnerFromForm() {
            notes: pField("notes").value.trim() };
 }
 
-// How couples book, as the book link: the URL, the wa.me link (built from the number and message; "" when the number
-// isn't one), or "" for no booking
+// How couples book, as the book link: the URL, the wa.me link (built from the number and message, none for the
+// default; "" when the number isn't one), or "" for no booking
 function bookFromForm() {
   const how = pField("book-how").value, number = waNumber(pField("book-wa").value);
-  if (how === "wa") return number ? waLink(number, pField("book-text").value.trim()) : "";
+  const text = pField("book-text").value.trim();
+  if (how === "wa") return number ? waLink(number, text === waText(pField("name").value.trim()) ? "" : text) : "";
   return how === "link" ? pField("book").value.trim() : "";
 }
 
-// Only the fields for how couples book, and under WhatsApp's the link it makes
+// Only the fields for how couples book; under WhatsApp's, the default message (in grey in an empty box) and the link
+// couples get
 function showBookFields() {
   const how = pField("book-how").value, typed = pField("book-wa").value.trim();
   pField("book-link-field").hidden = how !== "link";
   pField("book-wa-fields").hidden = how !== "wa";
+  pField("book-text").placeholder = waText(pField("name").value.trim());
   const link = pField("book-wa-link");
   const tooLong = !!waNumber(typed) && bookFromForm().length > BOOK_MAX;
   link.classList.toggle("bad", (!!typed && !waNumber(typed)) || tooLong);
   link.textContent = !typed ? "Type the number and the link is made for you."
                    : !waNumber(typed) ? "That isn't a WhatsApp number: 8 digits, or + and the country code."
-                   : tooLong ? "Message too long: make it shorter." : bookFromForm();
+                   : tooLong ? "Message too long: make it shorter."
+                   : bookHref({ book: bookFromForm(), name: pField("name").value.trim() });
 }
 
 // The partner as a matched couple would see it (dateIdeasBox), redrawn as the form changes. Map and Book open the links
@@ -1068,21 +1075,7 @@ pField("voucher").addEventListener("click", () => {
               { first: "Sam", tagId: "preview" });   // (a sample match)
 });
 
-// The message box's default follows the name until the team changes the message (waDefault; before the form's input
-// listener: the link and preview show the new name)
-pField("name").addEventListener("input", () => {
-  if (pField("book-text").value !== waDefault) return;
-  pField("book-text").value = waDefault = waText(pField("name").value.trim());
-});
 partnerForm.addEventListener("input", () => { limitPartnerChips(); showBookFields(); previewPartner(); });
-// Picking WhatsApp starts the message with waText (after the input listener: redrawn again with it)
-pField("book-how").addEventListener("change", () => {
-  if (pField("book-how").value === "wa" && !pField("book-text").value.trim()) {
-    pField("book-text").value = waDefault = waText(pField("name").value.trim());
-  }
-  showBookFields();
-  previewPartner();
-});
 document.getElementById("partner-add").addEventListener("click", () => openPartner({}));
 pField("cancel").addEventListener("click", () => { editingPartner = null; setStatus(""); drawPartners(); });
 partnerForm.addEventListener("submit", async e => {
@@ -1804,7 +1797,7 @@ function dateIdeasBox(ideas, label, card) {
     acts.append(map);
     if (idea.book) {
       const book = el("a", "d-idea-map d-idea-book", "Book");
-      book.href = idea.book;
+      book.href = bookHref(idea);
       book.target = "_blank";
       book.rel = "noopener";
       book.setAttribute("aria-label", parseWa(idea.book) ? `Book ${idea.name} on WhatsApp` : `Book ${idea.name}`);
