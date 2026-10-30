@@ -230,8 +230,8 @@ if (DATING) {
   document.getElementById("interests-legend").textContent = "Your hobbies";
   document.getElementById("goals-legend").textContent = "What are you looking for?";
   document.getElementById("goals-hint").textContent = HD_NIGHT
-    ? "You match with people looking for the same, and with types that pair with yours."
-    : "You match with people looking for the same.";
+    ? "You match with people who share a hobby or quick pick with you, sooner if they're looking for the same or their type pairs with yours."
+    : "You match with people who share a hobby or quick pick with you, sooner if they're looking for the same.";
   document.querySelectorAll(".sign .kicker").forEach(k => k.textContent = "HOPING TO MEET");
   document.querySelectorAll(".tagmock.sign").forEach(el => el.classList.add("dating"));   // big name, one-line hint
   document.getElementById("howto-looking").textContent = "Hoping to meet";
