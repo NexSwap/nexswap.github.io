@@ -340,6 +340,7 @@ function saveForm() {
       data.hd = Number(document.getElementById("hd").value);
       data.adult = document.getElementById("adult").checked;
       data.consent = document.getElementById("consent").checked;
+      data.emails = document.getElementById("emails").checked;
       data.photo = datingPhoto;
       data.photoChanged = photoChanged;
     }
@@ -359,6 +360,7 @@ function loadForm() {
       document.getElementById("hd").value = String(data.hd ?? -1);
       document.getElementById("adult").checked = !!data.adult;
       document.getElementById("consent").checked = !!data.consent;
+      document.getElementById("emails").checked = data.emails !== false;
       datingPhoto = /^data:image\/jpeg;base64,/.test(data.photo || "") ? data.photo : "";
       photoChanged = !!data.photoChanged;
       showPhoto();
@@ -643,6 +645,7 @@ function render() {
   document.getElementById("matches-signin").hidden = !onMatches || !!user || DEMO;
   document.getElementById("demo-banner").hidden = !DEMO;
   if (onMatches && !user && !DEMO) { document.getElementById("match-list").replaceChildren(); }
+  if (onMatches) markMatchesSeen();
 
   const wifiLast = mode === "wifi" && wifiStep === 3;
   button.hidden = !onProfile || wifiLast;          // on the last Wi-Fi card the link is the action
@@ -1444,6 +1447,13 @@ async function saveToAccount() {
                                                   p_offer: p.offer, p_seek: p.seek })
     : await supabase.from("profiles").upsert({ id: user.id, ...p, share_email: shareContact.checked,
                                                last_active_at: now(), updated_at: now() });
+  // "Email me about my matches" (set_dating_emails in migrations/20261029_dating_emails.sql); the profile is saved
+  // either way
+  if (DATING && !error) {
+    const { error: emailsError } = await supabase.rpc("set_dating_emails",
+                                                      { p_on: document.getElementById("emails").checked });
+    if (emailsError) console.error(emailsError);
+  }
   // the photo after the profile it belongs to ('' removes it: save_dating_photo in schema.sql)
   if (DATING && !error && photoChanged) {
     ({ error } = await supabase.rpc("save_dating_photo", { p_photo: datingPhoto }));
@@ -1544,6 +1554,12 @@ async function showUser(u) {
       showPhoto();
       saveForm();
     }
+  }
+  // Dating: an account that turned the match emails off (my_dating_emails) shows "Email me about my matches" unticked
+  if (DATING) {
+    const { data, error } = await supabase.rpc("my_dating_emails");
+    if (error) console.error(error);
+    else if (data === false) { document.getElementById("emails").checked = false; saveForm(); }
   }
   try {
     // (dating: no business profile to load; the dating form is on this phone and goes to the account on Send)
@@ -1679,6 +1695,17 @@ let datingRewound = new Set();          // match IDs brought back to the stack t
 let datingSwiped = [];                  // match IDs swiped this visit, newest last (for rewind)
 let revealTimer, countdownTimer;
 const REVEALED = "nexswap-revealed";    // the mutual Baes already revealed on this phone
+// Matches opened, for the match emails (dating_seen in migrations/20261029_dating_emails.sql: e4 and e5 skip anyone who
+// has opened their reveal): once while the window is open and once after a reveal shows, per page load. ?from= names
+// the email whose link brought them.
+let seenOpen = false, seenDone = false;
+function markMatchesSeen() {
+  if (!DATING || !user || DEMO || activeTab !== "matches") return;
+  const done = dating.done.length > 0;
+  if (done ? seenDone : seenOpen) return;
+  if (done) seenDone = true; else seenOpen = true;
+  supabase.rpc("dating_seen", { p_via: params.get("from") || "" }).then(({ error }) => error && console.error(error));
+}
 
 // Their goal line and shared hobbies, as matchReason words them (the first three, or all for the profile)
 function datingWhy(card, all = false) {
@@ -2438,6 +2465,7 @@ async function renderDating() {
   }
   drawDating();
   if (dating.done.length && activeTab === "matches") showReveals(dating.done);
+  markMatchesSeen();
   // Drawn again just after the first deadline passes, so mutual Baes appear without a reload (a window can be minutes);
   // the countdowns tick every minute
   clearTimeout(revealTimer);
@@ -2716,6 +2744,7 @@ updateInterestCount();
 limitChips();
 if (hasProfile() && !wifiSent) mode = "summary";   // just back from the tag's Wi-Fi: keep "How it works" / done
 if (DEMO) { activeTab = "matches"; renderMatches(); }
+if (params.get("view") === "matches") activeTab = "matches";   // the match emails' links open Matches directly
 if (params.get("howto") === "1") { activeTab = "profile"; mode = "howto"; }   // open How it works directly
 render();
 if (TAG_ID && !EVENT_ID && !wifiSent) setStatus(TAG_OLD, "err");
